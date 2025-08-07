@@ -1,2 +1,6 @@
 streamlit
 scrapy
+nltk
+sentence-transformers
+tqdm
+chromadb
