@@ -1,0 +1,41 @@
+[
+  {
+      "questions": [
+          "what is the name of the principal",
+          "who is the principal",
+          "principal name",
+          "who is the principal of sjcet",
+          "name of principal",
+          "principal of the college"
+      ],
+      "answer": "The principal of SJCET Palai is Dr. V.P. Devassia."
+  },
+  {
+      "questions": [
+          "what is the name of the college",
+          "college name",
+          "name of college",
+          "what college is this",
+          "which college"
+      ],
+      "answer": "The college name is SJCET (St. Joseph's College of Engineering and Technology), Palai."
+  },
+  {
+      "questions": [
+          "where is the college located",
+          "college location",
+          "address of college",
+          "where is sjcet"
+      ],
+      "answer": "SJCET is located in Palai, Kerala, India."
+  },
+  {
+      "questions": [
+          "what is sjcet",
+          "about sjcet",
+          "tell me about the college",
+          "college information"
+      ],
+      "answer": "SJCET (St. Joseph's College of Engineering and Technology) is an engineering college located in Palai, Kerala. The principal is Dr. V.P. Devassia."
+  }
+]
