@@ -9,9 +9,9 @@ from llm.llm import chat_with_model, retrieve_context
 
 import streamlit as st
 
-st.set_page_config(page_title="SJCET Palai Assistant", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="Chat Assistant", page_icon="🤖", layout="wide")
 
-st.title("💬 SJCET Palai Chat Assistant")
+st.title("💬 Chat Assistant")
 st.write("Ask a question and get answers from our knowledge base.")
 
 query = st.text_input("Enter your question:")
