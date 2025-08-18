@@ -94,7 +94,7 @@ from nltk.tokenize import sent_tokenize
 import nltk
 
 # ✅ Correct tokenizer name
-nltk.download('punkt')
+nltk.download('punkt_tab')
 
 def load_crawled_data(json_path):
     with open(json_path, 'r', encoding='utf-8') as f:
