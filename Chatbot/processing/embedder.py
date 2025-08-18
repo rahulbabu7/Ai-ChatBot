@@ -79,9 +79,11 @@ def embed_texts(chunks, model_name="all-MiniLM-L6-v2"):
     return embedded_chunks
 
 if __name__ == "__main__":
-    input_path = "crawler/crawler/output/website_chunks.json"
-    output_path = "crawler/crawler/output/website_embeddings.json"
-
+    base_dir = os.path.dirname(__file__)
+    input_path = os.path.join(base_dir, '..', 'crawler','crawler', 'output', 'website_chunks.json')
+    output_path = os.path.join(base_dir, '..', 'crawler','crawler', 'output', 'website_embeddings.json')
+    
+    print(os.path.exists(input_path))
     chunks = load_chunks(input_path)
     embedded_chunks = embed_texts(chunks)
     save_embeddings(embedded_chunks, output_path)
