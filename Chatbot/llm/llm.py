@@ -417,7 +417,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from chromadb import PersistentClient
 import torch
 import os
-from llm.custom_qa import find_custom_answer, load_custom_qa  # ✅ load and find
+from Chatbot.llm.custom_qa import find_custom_answer, load_custom_qa  # ✅ load and find
 
 MODEL_ID = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 CHROMA_DB_DIR = os.path.join(os.path.dirname(__file__), "..", "vector-database", "chroma_db")

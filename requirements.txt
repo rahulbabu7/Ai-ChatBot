@@ -5,3 +5,4 @@ sentence-transformers
 tqdm
 chromadb
 accelerate
+fastapi[standard]
