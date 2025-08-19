@@ -6,21 +6,31 @@ const ChatbotWindow = ({ onClose }) => {
   ]);
   const [input, setInput] = useState("");
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!input.trim()) return;
 
     const newMessage = { sender: "user", text: input };
-    setMessages([...messages, newMessage]);
+    setMessages((prev) => [...prev, newMessage]);
+    setInput("");
 
-    // fake bot reply
-    setTimeout(() => {
+    try {
+      const res = await fetch("http://localhost:8000/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: input }),
+      });
+
+      const data = await res.json();
       setMessages((prev) => [
         ...prev,
-        { sender: "bot", text: "Got it! (I’ll be smarter soon 😉)" }
+        { sender: "bot", text: data.reply }
       ]);
-    }, 1000);
-
-    setInput("");
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { sender: "bot", text: "⚠️ Error contacting backend." }
+      ]);
+    }
   };
 
   return (
