@@ -1,0 +1,8 @@
+streamlit
+scrapy
+nltk
+sentence-transformers
+tqdm
+chromadb
+accelerate
+fastapi[standard]
