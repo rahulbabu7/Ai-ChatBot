@@ -81,5 +81,9 @@
   {
     "questions": ["What programs does SJCET Palai offer for admission?"],
     "answer": "SJCET Palai offers various programs including B.Tech, M.Tech, MBA, MCA, and Integrated MCA. For more details, visit our [Admission Portal](https://sjcetpalai.ac.in/admissionportal/)."
+  },
+  {
+    "questions":["Hello","Hi there"],
+    "answer":"Hi, how can I help you ?"
   }
 ]
