@@ -1,0 +1,89 @@
+[
+  {
+    "questions": [
+      "what is the name of the principal",
+      "who is the principal",
+      "principal name",
+      "who is the principal of sjcet",
+      "name of principal",
+      "principal of the college"
+    ],
+    "answer": "The principal of SJCET Palai is Dr. V.P. Devassia."
+  },
+  {
+    "questions": [
+      "what is the name of the college",
+      "college name",
+      "name of college",
+      "what college is this",
+      "which college"
+    ],
+    "answer": "The college name is SJCET (St. Joseph's College of Engineering and Technology), Palai."
+  },
+  {
+    "questions": [
+      "where is the college located",
+      "college location",
+      "address of college",
+      "where is sjcet"
+    ],
+    "answer": "SJCET is located in Palai, Kerala, India."
+  },
+  {
+    "questions": [
+      "what is sjcet",
+      "about sjcet",
+      "tell me about the college",
+      "college information"
+    ],
+    "answer": "SJCET (St. Joseph's College of Engineering and Technology) is an engineering college located in Palai, Kerala. The principal is Dr. V.P. Devassia."
+  },
+  {
+    "questions": [
+      "How can I stay updated with college events and announcements?"
+    ],
+    "answer": "You can stay updated with college events and announcements by visiting our official website regularly or following us on our social media platforms."
+  },
+  {
+    "questions": [
+      "What support is available for students with financial difficulties?"
+    ],
+    "answer": "SJCET Palai has a charitable group called Spandanam that assists students with financial difficulties through various support schemes."
+  },
+  {
+    "questions": ["Are there any collaborations with other institutions?"],
+    "answer": "Yes, SJCET Palai has collaborations with various institutions including IIT Madras, Red Hat, and Oracle Academy to enhance the learning experience."
+  },
+  {
+    "questions": ["What is the vision of SJCET Palai?"],
+    "answer": "The vision of SJCET Palai is to develop into a world-class institute of engineering and technology, meeting the goals and aspirations of society."
+  },
+  {
+    "questions": ["How can I apply for admission?"],
+    "answer": "You can apply for admission through our [Admission Portal](https://sjcetpalai.ac.in/admissionportal/)."
+  },
+  {
+    "questions": ["What extracurricular activities does SJCET Palai offer?"],
+    "answer": "SJCET Palai offers various extracurricular activities including cultural fests like Sargam, technical fests like Asthra, and various clubs for sports, social service, and entrepreneurship."
+  },
+  {
+    "questions": ["Is there a library available for students?"],
+    "answer": "Yes, SJCET Palai has a library where students can search for books and resources. You can access the library [here](https://sjcet.koha.sjcetpalai.ac.in)."
+  },
+  {
+    "questions": ["Where can I find the results for the courses?"],
+    "answer": "Results for B.Tech, M.Tech, MBA, MCA, and Integrated MCA can be found on our [Results page](https://sjcetpalai.ac.in/results/)."
+  },
+  {
+    "questions": ["How can I contact the admission helpline?"],
+    "answer": "You can reach our admission helpline at +91 8078 700 700 or +91 8078 701 701 for any queries related to admissions."
+  },
+  {
+    "questions": ["What programs does SJCET Palai offer for admission?"],
+    "answer": "SJCET Palai offers various programs including B.Tech, M.Tech, MBA, MCA, and Integrated MCA. For more details, visit our [Admission Portal](https://sjcetpalai.ac.in/admissionportal/)."
+  },
+  {
+    "questions":["Hello","Hi there"],
+    "answer":"Hi, how can I help you ?"
+  }
+]
