@@ -12,6 +12,8 @@ BOT_NAME = "crawler"
 SPIDER_MODULES = ["crawler.spiders"]
 NEWSPIDER_MODULE = "crawler.spiders"
 
+FEEDS = {}
+
 ADDONS = {}
 
 
@@ -91,9 +93,9 @@ FEED_EXPORT_ENCODING = "utf-8"
 ROBOTSTXT_OBEY = True
 DOWNLOAD_DELAY = 1
 DEPTH_LIMIT = 3  # Adjust crawl depth as needed
-FEEDS = {
-    'output/website_content.json': {
-        'format': 'json',
-        'encoding': 'utf8'
-    }
-}
+# FEEDS = {
+#     'output/website_content.json': {
+#         'format': 'json',
+#         'encoding': 'utf8'
+#     }
+# }

@@ -7,3 +7,4 @@ chromadb
 accelerate
 fastapi[standard]
 python-dotenv
+groq
