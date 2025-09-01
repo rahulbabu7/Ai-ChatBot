@@ -1,4 +1,112 @@
-// src/pages/Login.tsx
+// // src/pages/Login.tsx
+// import { useState } from "react";
+// import { useNavigate, Link } from "react-router-dom";
+// import "./Auth.css";
+
+// const API = "http://localhost:8000";
+
+// const Login = () => {
+//   const [adminUsername, setAdminUsername] = useState("");
+//   const [adminPassword, setAdminPassword] = useState("");
+//   const [adminRemember, setAdminRemember] = useState(false);
+//   const [log, setLog] = useState("");
+//   const navigate = useNavigate();
+
+//   // Handle Admin login
+//   const handleAdminLogin = async () => {
+//     if (!adminUsername || !adminPassword) {
+//       setLog("❌ Please fill Admin Username & Password");
+//       return;
+//     }
+//     try {
+//       const res = await fetch(`${API}/auth/login`, {
+//         method: "POST",
+//         headers: { "Content-Type": "application/json" },
+//         body: JSON.stringify({
+//           role: "admin",
+//           username: adminUsername,
+//           password: adminPassword,
+//         }),
+//       });
+//       const data = await res.json();
+
+//       if (data.token) {
+//         if (adminRemember) {
+//           localStorage.setItem("token", data.token);
+//           localStorage.setItem("role", "admin");
+//         } else {
+//           sessionStorage.setItem("token", data.token);
+//           sessionStorage.setItem("role", "admin");
+//         }
+//         navigate("/admin");
+//       } else {
+//         setLog(`❌ ${data.message || "Admin login failed"}`);
+//       }
+//     } catch (err: any) {
+//       setLog(`❌ Error: ${err.message}`);
+//     }
+//   };
+
+//   return (
+//     <div className="auth-container">
+//       {/* Admin Login Card */}
+//       <div className="auth-card">
+//         <h2 className="auth-title">Admin Login</h2>
+
+//         <label htmlFor="adminUsername">Username</label>
+//         <input
+//           id="adminUsername"
+//           type="text"
+//           placeholder="Enter admin username"
+//           value={adminUsername}
+//           onChange={(e) => setAdminUsername(e.target.value)}
+//         />
+
+//         <label htmlFor="adminPassword">Password</label>
+//         <input
+//           id="adminPassword"
+//           type="password"
+//           placeholder="Enter admin password"
+//           value={adminPassword}
+//           onChange={(e) => setAdminPassword(e.target.value)}
+//         />
+
+//         <div className="auth-options">
+//           <label>
+//             <input
+//               type="checkbox"
+//               checked={adminRemember}
+//               onChange={() => setAdminRemember(!adminRemember)}
+//             />
+//             Remember Me
+//           </label>
+//           <Link to="/forgot-password" className="forgot-link">
+//             Forgot Password?
+//           </Link>
+//         </div>
+
+//         <button className="auth-btn" onClick={handleAdminLogin}>
+//           Login as Admin
+//         </button>
+//       </div>
+
+//       {/* New User Signup Card */}
+//       <div className="auth-card">
+//         <h2 className="auth-title">New User?</h2>
+//         <p className="switch-link">Sign up and create your account</p>
+//         <Link to="/signup">
+//           <button className="auth-btn">Sign Up Here!</button>
+//         </Link>
+//       </div>
+
+//       {log && <p className="auth-log">{log}</p>}
+//     </div>
+//   );
+// };
+
+// export default Login;
+
+
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import "./Auth.css";
@@ -6,16 +114,15 @@ import "./Auth.css";
 const API = "http://localhost:8000";
 
 const Login = () => {
-  const [adminUsername, setAdminUsername] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
-  const [adminRemember, setAdminRemember] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
   const [log, setLog] = useState("");
   const navigate = useNavigate();
 
-  // Handle Admin login
-  const handleAdminLogin = async () => {
-    if (!adminUsername || !adminPassword) {
-      setLog("❌ Please fill Admin Username & Password");
+  const handleLogin = async () => {
+    if (!username || !password) {
+      setLog("❌ Please fill Username & Password");
       return;
     }
     try {
@@ -23,24 +130,23 @@ const Login = () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          role: "admin",
-          username: adminUsername,
-          password: adminPassword,
+          username,
+          password,
         }),
       });
       const data = await res.json();
 
-      if (data.token) {
-        if (adminRemember) {
-          localStorage.setItem("token", data.token);
-          localStorage.setItem("role", "admin");
+      if (data.success) {
+        const id = data.client_id;
+        if (remember) {
+          localStorage.setItem("client_id", id);
         } else {
-          sessionStorage.setItem("token", data.token);
-          sessionStorage.setItem("role", "admin");
+          sessionStorage.setItem("client_id", id);
         }
-        navigate("/admin");
-      } else {
-        setLog(`❌ ${data.message || "Admin login failed"}`);
+        navigate(`/dashboard/${id}`); // ✅ redirect with clientId in URL
+      }
+        else {
+        setLog(`❌ ${data.message || "Login failed"}`);
       }
     } catch (err: any) {
       setLog(`❌ Error: ${err.message}`);
@@ -49,34 +155,34 @@ const Login = () => {
 
   return (
     <div className="auth-container">
-      {/* Admin Login Card */}
+      {/* Client Login Card */}
       <div className="auth-card">
-        <h2 className="auth-title">Admin Login</h2>
+        <h2 className="auth-title">Client Login</h2>
 
-        <label htmlFor="adminUsername">Username</label>
+        <label htmlFor="username">Username</label>
         <input
-          id="adminUsername"
+          id="username"
           type="text"
-          placeholder="Enter admin username"
-          value={adminUsername}
-          onChange={(e) => setAdminUsername(e.target.value)}
+          placeholder="Enter username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
         />
 
-        <label htmlFor="adminPassword">Password</label>
+        <label htmlFor="password">Password</label>
         <input
-          id="adminPassword"
+          id="password"
           type="password"
-          placeholder="Enter admin password"
-          value={adminPassword}
-          onChange={(e) => setAdminPassword(e.target.value)}
+          placeholder="Enter password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
         />
 
         <div className="auth-options">
           <label>
             <input
               type="checkbox"
-              checked={adminRemember}
-              onChange={() => setAdminRemember(!adminRemember)}
+              checked={remember}
+              onChange={() => setRemember(!remember)}
             />
             Remember Me
           </label>
@@ -85,14 +191,14 @@ const Login = () => {
           </Link>
         </div>
 
-        <button className="auth-btn" onClick={handleAdminLogin}>
-          Login as Admin
+        <button className="auth-btn" onClick={handleLogin}>
+          Login
         </button>
       </div>
 
       {/* New User Signup Card */}
       <div className="auth-card">
-        <h2 className="auth-title">New User?</h2>
+        <h2 className="auth-title">New Client?</h2>
         <p className="switch-link">Sign up and create your account</p>
         <Link to="/signup">
           <button className="auth-btn">Sign Up Here!</button>
