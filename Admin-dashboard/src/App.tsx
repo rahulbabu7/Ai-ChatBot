@@ -1,10 +1,11 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import AdminDashboard from "./pages/AdminDashboard";
-import ClientManager from "./pages/ClientManager";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import ForgotPassword from "./pages/ForgotPassword";
 import PrivateRoute from "./components/PrivateRoute";
+import Dashboard from "./pages/Dashboard";
+import ChatsPage from "./pages/ChatsPage";
 
 function App() {
   return (
@@ -14,6 +15,9 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/dashboard/:clientId" element={<Dashboard />} />
+        <Route path="/chats" element={<ChatsPage />} />
+
 
         {/* Protected Admin Route */}
         <Route
@@ -30,7 +34,7 @@ function App() {
           path="/client/:clientId"
           element={
             <PrivateRoute role="client">
-              <ClientManager />
+              <Dashboard />
             </PrivateRoute>
           }
         />

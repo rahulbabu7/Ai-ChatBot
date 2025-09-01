@@ -1,16 +1,33 @@
 import { useParams } from "react-router-dom";
-import { useState } from "react";
-import "../App.css"; // ensure CSS applies
+import { useState, useEffect } from "react";
+import "../App.css";
 
 const API = "http://localhost:8000";
 
-const ClientManager = () => {
-  const { clientId } = useParams();
-  const [allowed_domain, setDomain] = useState("");
+const Dashboard = () => {
+  const { clientId } = useParams<{ clientId: string }>();
+  const [clientName, setClientName] = useState<string>("");
+  const [allowedDomain, setDomain] = useState("");
   const [startUrl, setStartUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string>("");
   const [qaFile, setQaFile] = useState<File | null>(null);
+
+  // fetch client details on mount
+  useEffect(() => {
+    const fetchClient = async () => {
+      try {
+        const res = await fetch(`${API}/client/${clientId}`);
+        if (!res.ok) throw new Error("Failed to fetch client");
+        const data = await res.json();
+        setClientName(data.name); // use "name" from DB
+      } catch (e: any) {
+        console.error(e);
+        setClientName(clientId || "Unknown Client");
+      }
+    };
+    fetchClient();
+  }, [clientId]);
 
   const call = async (url: string, options: RequestInit = {}) => {
     setBusy(true);
@@ -27,18 +44,18 @@ const ClientManager = () => {
   };
 
   const triggerCrawl = () =>
-    call("/admin/crawl", {
+    call(`/client/crawl`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         client_id: clientId,
-        allowed_domain,
+        allowed_domain: allowedDomain,
         start_url: startUrl,
       }),
     });
 
   const runEmbeddings = () =>
-    call(`/admin/embed/${clientId}`, { method: "POST" });
+    call(`/client/embed/${clientId}`, { method: "POST" });
 
   const uploadQA = async () => {
     if (!qaFile) {
@@ -48,7 +65,7 @@ const ClientManager = () => {
     const formData = new FormData();
     formData.append("file", qaFile);
 
-    call(`/admin/upload-qa/${clientId}`, {
+    call(`/client/upload-qa/${clientId}`, {
       method: "POST",
       body: formData,
     });
@@ -57,7 +74,7 @@ const ClientManager = () => {
   return (
     <div className="client-manager">
       <div className="dashboard-card">
-        <h2 className="client-title">Manage {clientId}</h2>
+        <h2 className="client-title">Manage Client: {clientName}</h2> {/* ✅ show full name */}
 
         <div className="client-controls">
           {/* Crawl settings */}
@@ -65,7 +82,7 @@ const ClientManager = () => {
           <input
             id="allowedDomain"
             placeholder="e.g. abc.edu"
-            value={allowed_domain}
+            value={allowedDomain}
             onChange={(e) => setDomain(e.target.value)}
           />
 
@@ -106,4 +123,4 @@ const ClientManager = () => {
   );
 };
 
-export default ClientManager;
+export default Dashboard;
