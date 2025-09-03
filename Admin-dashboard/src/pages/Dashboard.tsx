@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import "../App.css";
 
@@ -74,7 +74,7 @@ const Dashboard = () => {
   return (
     <div className="client-manager">
       <div className="dashboard-card">
-        <h2 className="client-title">Manage Client: {clientName}</h2> {/* ✅ show full name */}
+        <h2 className="client-title">Manage Client: {clientName}</h2>
 
         <div className="client-controls">
           {/* Crawl settings */}
@@ -114,6 +114,8 @@ const Dashboard = () => {
           <button disabled={busy} onClick={uploadQA}>
             📥 Upload Q&A
           </button>
+
+          
         </div>
 
         {/* Logs */}
