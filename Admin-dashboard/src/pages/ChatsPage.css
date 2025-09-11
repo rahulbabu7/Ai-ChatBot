@@ -140,3 +140,8 @@
   clip: rect(0,0,0,0);
   border: 0;
 }
+.country-code {
+  font-size: 0.9em;
+  color: #888;
+  margin-left: 5px;
+}
