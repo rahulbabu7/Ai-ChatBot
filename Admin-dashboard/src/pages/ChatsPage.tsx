@@ -1,15 +1,12 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
+import "./ChatsPage.css";
 
 interface Client {
   client_id: string;
   name: string;
   username: string;
   email: string;
-}
-
-interface Session {
-  session_id: string;
 }
 
 interface Chat {
@@ -27,15 +24,14 @@ export default function ChatsPage() {
   const [selectedSession, setSelectedSession] = useState<string>("");
   const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(false);
+  const [visitorCount, setVisitorCount] = useState<number>(0);
 
-  // Load all clients (admin view)
   useEffect(() => {
     axios.get("http://localhost:8000/admin/clients").then((res) => {
       setClients(res.data.clients);
     });
   }, []);
 
-  // Load sessions when client changes
   useEffect(() => {
     if (selectedClient) {
       axios
@@ -44,11 +40,16 @@ export default function ChatsPage() {
           setSessions(res.data.sessions);
           setSelectedSession("");
           setChats([]);
+          setVisitorCount(res.data.sessions.length);
         });
+    } else {
+      setVisitorCount(0);
+      setSessions([]);
+      setChats([]);
+      setSelectedSession("");
     }
   }, [selectedClient]);
 
-  // Load chats when session changes
   useEffect(() => {
     if (selectedClient && selectedSession) {
       setLoading(true);
@@ -56,22 +57,24 @@ export default function ChatsPage() {
         .get(
           `http://localhost:8000/client/${selectedClient}/chats?session_id=${selectedSession}`
         )
-        .then((res) => {
-          setChats(res.data.chats);
-        })
+        .then((res) => setChats(res.data.chats))
         .finally(() => setLoading(false));
     }
   }, [selectedClient, selectedSession]);
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Client Chats</h1>
+    <div className="dashboard-container">
+      {/* Sidebar */}
+      <aside className="sidebar">
+        <h2>Clients</h2>
 
-      {/* Select Client */}
-      <div>
-        <label className="font-semibold">Select Client:</label>
+        {/* Client Select with accessible label and title */}
+        <label htmlFor="clientSelect" className="sr-only">
+          Select Client
+        </label>
         <select
-          className="ml-2 p-2 border rounded"
+          id="clientSelect"
+          title="Select Client"
           value={selectedClient}
           onChange={(e) => setSelectedClient(e.target.value)}
         >
@@ -82,53 +85,59 @@ export default function ChatsPage() {
             </option>
           ))}
         </select>
-      </div>
 
-      {/* Select Session */}
-      {sessions.length > 0 && (
-        <div>
-          <label className="font-semibold">Select Session:</label>
-          <select
-            className="ml-2 p-2 border rounded"
-            value={selectedSession}
-            onChange={(e) => setSelectedSession(e.target.value)}
-          >
-            <option value="">-- Choose Session --</option>
-            {sessions.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* Chat Messages */}
-      <div className="border p-4 rounded bg-gray-50 max-h-[500px] overflow-y-auto">
-        {loading ? (
-          <p>Loading chats...</p>
-        ) : chats.length === 0 ? (
-          <p className="text-gray-500">No chats available.</p>
-        ) : (
-          chats.map((chat, i) => (
-            <div
-              key={i}
-              className={`my-2 p-2 rounded ${
-                chat.role === "user"
-                  ? "bg-blue-100 text-left"
-                  : "bg-green-100 text-right"
-              }`}
-            >
-              <p className="text-sm text-gray-600">
-                [{chat.role}] {new Date(chat.created_at).toLocaleString()}  
-              </p>
-              <p className="text-base">{chat.message}</p>
-              <p className="text-xs text-gray-500">UA: {chat.user_agent}</p>
-            </div>
-          ))
+        {/* Visitor Count */}
+        {selectedClient && (
+          <div className="visitor-card">
+            <h3>Chats</h3>
+            <p>{visitorCount}</p>
+          </div>
         )}
-      </div>
+
+        {/* Session List */}
+        {sessions.length > 0 && (
+          <div className="sessions-list">
+            <h3>Chat History</h3>
+            {sessions.map((s) => (
+              <div
+                key={s}
+                className={`session-item ${
+                  selectedSession === s ? "active" : ""
+                }`}
+                onClick={() => setSelectedSession(s)}
+              >
+                {s}
+              </div>
+            ))}
+          </div>
+        )}
+      </aside>
+
+      {/* Chat Area */}
+      <main className="chat-main">
+        {loading ? (
+          <p className="loading-text">Loading chats...</p>
+        ) : chats.length === 0 ? (
+          <p className="loading-text">Select a session to view chats</p>
+        ) : (
+          <div className="chat-messages">
+            {chats.map((chat, i) => (
+              <div
+                key={i}
+                className={`chat-message ${
+                  chat.role === "user" ? "user" : "bot"
+                }`}
+              >
+                <div className="message-content">{chat.message}</div>
+                <div className="message-meta">
+                  [{chat.role}] {new Date(chat.created_at).toLocaleString()} | UA:{" "}
+                  {chat.user_agent}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
     </div>
   );
 }
-
