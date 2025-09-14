@@ -1,0 +1,145 @@
+/* Container: supports multiple cards side by side */
+.auth-container {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 30px;
+  flex-wrap: wrap; /* ensures responsiveness on smaller screens */
+  min-height: 100vh;
+  background: linear-gradient(135deg, #4f46e5, #9333ea);
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  padding: 40px;
+}
+
+/* Card style */
+.auth-card {
+  background: #fff;
+  padding: 2rem;
+  border-radius: 1rem;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  width: 320px;
+  animation: fadeIn 0.6s ease-in-out;
+}
+
+.auth-title {
+  margin-bottom: 1rem;
+  text-align: center;
+  color: #333;
+}
+
+/* Inputs & Select */
+.auth-card input,
+.auth-card select {
+  width: 100%;
+  padding: 10px;
+  margin: 8px 0 16px 0;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  outline: none;
+  font-size: 14px;
+  transition: border 0.2s;
+}
+
+.auth-card input:focus,
+.auth-card select:focus {
+  border-color: #4f46e5;
+}
+
+/* Button */
+.auth-btn {
+  width: 100%;
+  padding: 12px;
+  background: #4f46e5;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.auth-btn:hover {
+  background: #4338ca;
+}
+
+/* Logs */
+.auth-log {
+  margin-top: 1rem;
+  font-size: 14px;
+  color: #e11d48; /* red for error */
+}
+
+.auth-log:contains("✅") {
+  color: #16a34a; /* green for success */
+}
+
+/* Options row (Remember me + Forgot password) */
+.auth-options {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 12px 0 20px 0;
+  font-size: 14px;
+  color: #555;
+}
+
+.auth-options label {
+  display: flex;
+  align-items: center;
+}
+
+.auth-options input[type="checkbox"] {
+  margin-right: 6px;
+}
+
+.forgot-link {
+  color: #4f46e5;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.forgot-link:hover {
+  text-decoration: underline;
+}
+
+.switch-link {
+  margin-top: 15px;
+  font-size: 14px;
+  color: #444;
+}
+
+.switch-link a {
+  color: #4f46e5;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.switch-link a:hover {
+  text-decoration: underline;
+}
+
+/* Communication consent checkbox */
+.auth-comm {
+  text-align: left;
+  margin: 15px 0;
+  font-size: 13px;
+  color: #444;
+  line-height: 1.5;
+}
+
+.auth-comm input[type="checkbox"] {
+  margin-right: 8px;
+}
+
+/* Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
