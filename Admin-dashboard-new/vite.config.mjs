@@ -7,58 +7,54 @@ const resolvePath = (str) => path.resolve(__dirname, str);
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const API_URL = `${env.VITE_APP_BASE_NAME}`;
+  // Base URL for deployment (only path, no domain)
+  const BASE_URL = env.VITE_APP_BASE_NAME || '/';
   const PORT = 3000;
 
   return {
+    base: BASE_URL, // important: must match Router basename
     server: {
-      open: true,
       port: PORT,
-      host: true
+      host: true,
+      // automatically open login page in browser
+      open: `${BASE_URL}login`,
     },
     preview: {
-      open: true,
-      host: true
+      host: true,
+      open: `${BASE_URL}login`,
     },
     define: {
-      global: 'window'
+      global: 'window',
     },
     resolve: {
       alias: [
-        { find: 'sections', replacement: resolvePath('src/sections') },
-        { find: 'components', replacement: resolvePath('src/components') },
-        { find: 'assets', replacement: resolvePath('src/assets') },
-        { find: 'views', replacement: resolvePath('src/views') },
-        { find: 'utils', replacement: resolvePath('src/utils') }
-      ]
+        { find: '@', replacement: path.resolve(__dirname, 'src') },
+        { find: 'assets', replacement: path.resolve(__dirname, 'src/assets') },
+      ],
     },
     css: {
       preprocessorOptions: {
         scss: { charset: false },
-        less: { charset: false }
+        less: { charset: false },
       },
       charset: false,
       postcss: {
         plugins: [
           {
             postcssPlugin: 'internal:charset-removal',
-            AtRule: {
-              charset: (atRule) => { if (atRule.name === 'charset') atRule.remove(); }
-            }
-          }
-        ]
-      }
+            AtRule: { charset: (atRule) => atRule.remove() },
+          },
+        ],
+      },
     },
     build: {
       chunkSizeWarningLimit: 1600,
       rollupOptions: {
         input: {
           main: resolvePath('index.html'),
-          legacy: resolvePath('index.html')
-        }
-      }
+        },
+      },
     },
-    base: API_URL,
-    plugins: [react(), jsconfigPaths()]
+    plugins: [react(), jsconfigPaths()],
   };
 });

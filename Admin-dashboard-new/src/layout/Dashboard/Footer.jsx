@@ -16,9 +16,9 @@ export default function Footer() {
           {/* Footer Text */}
           <Col xs="auto" className="my-1">
             <p className="m-0">
-              {branding.brandName} ♥ Crafted By Team{' '}
-              <a href="https://codedthemes.com/" target="_blank" rel="noopener noreferrer" className="text-primary">
-                CodedThemes
+              {branding.brandName} ♥ Crafted By Team{' at '}
+              <a href="https://kochi.digital/" target="_blank" rel="noopener noreferrer" className="text-primary">
+                Kochi.Digital
               </a>
             </p>
           </Col>
@@ -29,10 +29,10 @@ export default function Footer() {
               <Nav.Link className="p-0" as="a" href="/">
                 Home
               </Nav.Link>
-              <Nav.Link className="p-0" as="a" href="https://codedthemes.gitbook.io/datta" target="_blank" rel="noopener noreferrer">
+              <Nav.Link className="p-0" as="a" href="https://kochi.digital/contact.html" target="_blank" rel="noopener noreferrer">
                 Documentation
               </Nav.Link>
-              <Nav.Link className="p-0" as="a" href="https://codedthemes.support-hub.io/" target="_blank" rel="noopener noreferrer">
+              <Nav.Link className="p-0" as="a" href="https://kochi.digital/contact.html" target="_blank" rel="noopener noreferrer">
                 Support
               </Nav.Link>
             </Stack>

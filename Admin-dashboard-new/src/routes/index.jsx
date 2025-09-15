@@ -9,21 +9,18 @@ import TablesRoutes from './TablesRoutes';
 import ChartMapRoutes from './ChartMapRoutes';
 import OtherRoutes from './OtherRoutes';
 
-// ==============================|| ROUTING RENDER ||============================== //
-
 // custom imports
 import Login from '../views/auth/login/Login';
 import DefaultPage from '../views/navigation/dashboard/Default';
-
 
 const router = createBrowserRouter(
   [
     // redirect base path to login
     {
-      path: '/demos/admin-templates/datta-able/react/free',
+      path: '/demos/admin-templates/datta-able/react/free/login/',
       element: (
         <Navigate
-          to="/demos/admin-templates/datta-able/react/free"
+          to="/demos/admin-templates/datta-able/react/free/login/"
           replace
         />
       )
@@ -31,7 +28,7 @@ const router = createBrowserRouter(
 
     // login route
     {
-      path: '/demos/admin-templates/datta-able/react/free/login',
+      path: '/demos/admin-templates/datta-able/react/free/login/',
       element: <Login />
     },
 
@@ -40,9 +37,16 @@ const router = createBrowserRouter(
       path: '/demos/admin-templates/datta-able/react/free/dashboard/:clientId',
       element: <DefaultPage />
     },
-    
+
     // existing template routes
-    NavigationRoutes, ComponentsRoutes, FormsRoutes, TablesRoutes, ChartMapRoutes, PagesRoutes, OtherRoutes],
+    NavigationRoutes,
+    ComponentsRoutes,
+    FormsRoutes,
+    TablesRoutes,
+    ChartMapRoutes,
+    PagesRoutes,
+    OtherRoutes
+  ],
   {
     basename: import.meta.env.VITE_APP_BASE_NAME
   }

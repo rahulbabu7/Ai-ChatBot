@@ -1,7 +1,7 @@
 // project-imports
-import AuthRegister from "sections/auth/AuthRegister";
+import AuthRegister from 'sections/auth/AuthRegister';
 
-// ===========================|| AUTH - REGISTER PAGE ||=========================== //
+// ===========================|| AUTH - REGISTER V1 ||=========================== //
 
 export default function RegisterPage() {
   return (
@@ -9,13 +9,16 @@ export default function RegisterPage() {
       <div className="auth-wrapper v1">
         <div className="auth-form">
           <div className="position-relative">
+
+            {/* Decorative background shapes */}
             <div className="auth-bg">
               <span className="r"></span>
               <span className="r s"></span>
               <span className="r s"></span>
               <span className="r"></span>
             </div>
-            {/* Render the new functional signup form */}
+
+            {/* Register Form */}
             <AuthRegister link="/login" />
           </div>
         </div>

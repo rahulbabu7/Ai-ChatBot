@@ -10,7 +10,7 @@ import DrawerContent from './DrawerContent';
 import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
 
 // assets
-import logo from 'assets/images/logo-white.svg';
+import logo from "/kdlogo.svg";
 
 // ==============================|| MAIN LAYOUT - DRAWER ||============================== //
 

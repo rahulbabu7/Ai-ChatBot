@@ -10,7 +10,7 @@ import uiComponents from './ui-components';
 // ==============================|| MENU ITEMS ||============================== //
 
 const menuItems = {
-  items: [navigation, pages]
+  items: [navigation]
 };
 
 export default menuItems;

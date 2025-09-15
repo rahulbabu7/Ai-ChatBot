@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
-import "../App.css";
+import "assets/scss/style.scss"; // use the global SCSS
 
 const API = "http://localhost:8000";
 
@@ -47,46 +47,61 @@ const AdminDashboard = () => {
   }, []);
 
   return (
-    <div className="admin-dashboard">
-      <div className="dashboard-card">
-        <h1 className="client-title">Admin Dashboard</h1>
+    <div className="container mt-4">
+      <div className="card">
+        <div className="card-body">
+          <h2 className="mb-3">Admin Dashboard</h2>
 
-        {/* Input + Add Client */}
-        <div className="client-input-row">
-          <input
-            type="text"
-            placeholder="Enter new client ID"
-            value={newClient}
-            onChange={(e) => setNewClient(e.target.value)}
-          />
-          <button onClick={addClient}>➕ Add Client</button>
+          {/* Back to Home */}
+          <div className="mb-3">
+            <Link to="/">
+              <button className="btn btn-outline-secondary">🏠 Back to Home</button>
+            </Link>
+          </div>
+
+          {/* Add New Client */}
+          <div className="mb-3 d-flex gap-2">
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Enter new client ID"
+              value={newClient}
+              onChange={(e) => setNewClient(e.target.value)}
+            />
+            <button className="btn btn-primary" onClick={addClient}>
+              ➕ Add Client
+            </button>
+          </div>
+
+          {/* Logs */}
+          {log && (
+            <p
+              className={`${
+                log.startsWith("✅") ? "text-success" : log.startsWith("❌") ? "text-danger" : ""
+              }`}
+            >
+              {log}
+            </p>
+          )}
+
+          {/* Client List */}
+          {loading ? (
+            <p>Loading clients...</p>
+          ) : clients.length === 0 ? (
+            <p>No clients found.</p>
+          ) : (
+            <ul className="list-group">
+              {clients.map((c) => (
+                <li key={c.client_id} className="list-group-item">
+                  {/* ✅ Link to Dashboard.jsx using client_id */}
+                  <Link to={`/client/${c.client_id}`}>
+                    {c.name} ({c.email})
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-
-        {/* Logs */}
-        {log && (
-          <p
-            className={`log-message ${
-              log.startsWith("✅") ? "log-success" : log.startsWith("❌") ? "log-error" : ""
-            }`}
-          >
-            {log}
-          </p>
-        )}
-
-        {/* Client list */}
-        {loading ? (
-          <p>Loading clients...</p>
-        ) : clients.length === 0 ? (
-          <p>No clients found.</p>
-        ) : (
-          <ol>
-            {clients.map((c) => (
-              <li key={c}>
-                <Link to={`/client/${c}`}>{c}</Link>
-              </li>
-            ))}
-          </ol>
-        )}
       </div>
     </div>
   );

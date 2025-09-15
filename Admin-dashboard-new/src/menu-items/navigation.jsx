@@ -1,4 +1,7 @@
-const icons = { dashboard: <i className="ph ph-house-line" />, layouts: <i className="ph ph-house-line" /> };
+const icons = { 
+  dashboard: <i className="ph ph-house-line" />, 
+  layouts: <i className="ph ph-layout" /> 
+};
 
 const navigation = {
   id: 'group-dashboard-loading-unique',
@@ -26,13 +29,6 @@ const navigation = {
       type: 'item',
       icon: icons.layouts,
       url: '/dashboard-client'
-    },
-    {
-      id: 'chats-page',
-      title: 'Chats Page',
-      type: 'item',
-      icon: icons.layouts,
-      url: '/chats-page'
     }
   ]
 };
