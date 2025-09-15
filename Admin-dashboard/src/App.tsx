@@ -6,10 +6,12 @@ import ForgotPassword from "./pages/ForgotPassword";
 import PrivateRoute from "./components/PrivateRoute";
 import Dashboard from "./pages/Dashboard";
 import ChatsPage from "./pages/ChatsPage";
+import InactivityLogout from "./pages/InactivityLogout";
 
 function App() {
   return (
     <Router>
+       <InactivityLogout />
       <Routes>
         {/* Public Routes */}
         <Route path="/login" element={<Login />} />

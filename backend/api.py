@@ -59,45 +59,6 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
-# ----------------------------
-# 🔹 CLIENT CHAT (with session logging)
-# ----------------------------
-# @app.post("/client/chat/{client_id}")
-# def client_chat(client_id: str, req: ChatRequest, request: Request, x_chatbot_key: str = Header(None)):
-#     conn = get_db()
-#     cursor = conn.cursor()
-
-#     # ✅ Validate client + chatbot_key
-#     cursor.execute("SELECT * FROM users WHERE client_id=? AND chatbot_key=?", (client_id, x_chatbot_key))
-#     client = cursor.fetchone()
-#     if not client:
-#         raise HTTPException(status_code=403, detail="Invalid client or key")
-
-#     # ✅ Ensure session_id
-#     session_id = req.session_id or str(uuid.uuid4())
-
-#     # ✅ Capture user-agent
-#     user_agent = request.headers.get("user-agent", "unknown")
-
-#     # ✅ Store user message
-#     cursor.execute("""
-#         INSERT INTO chats (client_id, session_id, role, message, user_agent)
-#         VALUES (?, ?, ?, ?, ?)
-#     """, (client_id, session_id, "user", req.message, user_agent))
-#     conn.commit()
-
-#     # ✅ Generate chatbot reply
-#     bot_reply = chat_with_model(client_id, req.message)
-
-#     # ✅ Store assistant reply
-#     cursor.execute("""
-#         INSERT INTO chats (client_id, session_id, role, message, user_agent)
-#         VALUES (?, ?, ?, ?, ?)
-#     """, (client_id, session_id, "assistant", bot_reply, user_agent))
-#     conn.commit()
-#     conn.close()
-
-#     return {"session_id": session_id, "reply": bot_reply}
 
 import requests
 from fastapi import Request
@@ -106,31 +67,31 @@ from fastapi import Request
 def client_chat(client_id: str, req: ChatRequest, request: Request, x_chatbot_key: str = Header(None)):
     conn = get_db()
     cursor = conn.cursor()
-    
+
     # ✅ Validate client + chatbot_key
     cursor.execute("SELECT * FROM users WHERE client_id=? AND chatbot_key=?", (client_id, x_chatbot_key))
     client = cursor.fetchone()
     if not client:
         raise HTTPException(status_code=403, detail="Invalid client or key")
-    
+
     # ✅ Ensure session_id
     session_id = req.session_id or str(uuid.uuid4())
-    
+
     # ✅ Capture user-agent and IP address
     user_agent = request.headers.get("user-agent", "unknown")
     user_ip = request.client.host
-    
+
     # Get the user's location from ipinfo.io API
     try:
         location_response = requests.get(f"https://ipinfo.io/{user_ip}/json")
         location_data = location_response.json()
         country_code = location_data.get("country", "Unknown")
-        
-       
+
+
     except requests.RequestException:
         country_code = "Unknown"
-        
-    
+
+
     # ✅ Store user message and country code
     cursor.execute("""
         INSERT INTO chats (client_id, session_id, role, message, user_agent, country_code)
@@ -140,16 +101,16 @@ def client_chat(client_id: str, req: ChatRequest, request: Request, x_chatbot_ke
 
     # ✅ Generate chatbot reply
     bot_reply = chat_with_model(client_id, req.message)
-    
+
     # ✅ Store assistant reply with the same country code
     cursor.execute("""
         INSERT INTO chats (client_id, session_id, role, message, user_agent, country_code)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (client_id, session_id, "assistant", bot_reply, user_agent, country_code))
     conn.commit()
-    
+
     conn.close()
-    
+
     return {"session_id": session_id, "reply": bot_reply}
 
 
@@ -236,23 +197,31 @@ def check_status(client_id: str):
 # ----------------------------
 # 🔹 AUTH (Signup + Login)
 # ----------------------------
+import bcrypt
+from fastapi import HTTPException
+import uuid
+
 @app.post("/auth/signup")
 def signup(req: SignupRequest):
     conn = get_db()
     cursor = conn.cursor()
-
     client_id = f"{req.username}_{uuid.uuid4().hex[:6]}"
     chatbot_key = uuid.uuid4().hex  # ✅ generate API key
+
+    # Hash the password before storing it
+    hashed_password = bcrypt.hashpw(req.password.encode('utf-8'), bcrypt.gensalt())
 
     try:
         cursor.execute("""
             INSERT INTO users (username, password, name, email, mobile, client_id, chatbot_key)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (req.username, req.password, req.name, req.email, req.mobile, client_id, chatbot_key))
+        """, (req.username, hashed_password.decode('utf-8'), req.name, req.email, req.mobile, client_id, chatbot_key))
         conn.commit()
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=400, detail=f"Signup failed: {str(e)}")
+    finally:
+        conn.close()
 
     return {"success": True, "client_id": client_id, "chatbot_key": chatbot_key, "message": "Signup successful"}
 
@@ -260,18 +229,72 @@ def signup(req: SignupRequest):
 def login(req: LoginRequest):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE username=? AND password=?", (req.username, req.password))
-    user = cursor.fetchone()
-
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-
-    return {
-        "success": True,
-        "client_id": user["client_id"],
-        "chatbot_key": user["chatbot_key"],
-        "message": "Login successful"
-    }
+    
+    try:
+        print(f"Login attempt for username: '{req.username}'")
+        print(f"Login attempt for password: '{req.password}'")
+        
+        cursor.execute("SELECT * FROM users WHERE username=?", (req.username,))
+        user = cursor.fetchone()
+        
+        # print(f"User found in database: {user is not None}")
+        
+        if not user:
+            # print("User not found - raising 401")
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+        
+        stored_password = user['password']
+        # print(f"Stored password: '{stored_password}'")
+        # print(f"Stored password type: {type(stored_password)}")
+        # print(f"Stored password length: {len(stored_password)}")
+        
+        # Convert bytes to string if needed
+        if isinstance(stored_password, bytes):
+            stored_password = stored_password.decode('utf-8')
+            # print(f"Converted to string: '{stored_password}'")
+        
+        # print(f"Password starts with bcrypt prefix: {stored_password.startswith(('$2a$', '$2b$', '$2y$'))}")
+        
+        # Check if password is hashed (bcrypt hashes start with $2a$, $2b$, or $2y$)
+        if stored_password.startswith(('$2a$', '$2b$', '$2y$')):
+            print("Using bcrypt verification")
+            # It's a hashed password - use bcrypt
+            stored_password_bytes = stored_password.encode('utf-8')
+            password_match = bcrypt.checkpw(req.password.encode('utf-8'), stored_password_bytes)
+            # print(f"Bcrypt password match: {password_match}")
+            
+            if not password_match:
+                # print("Bcrypt verification failed - raising 401")
+                raise HTTPException(status_code=401, detail="Invalid username or password")
+        else:
+            # print("Using plain text comparison")
+            # It's a plain text password - direct comparison
+            password_match = req.password == stored_password
+            # print(f"Plain text password match: {password_match}")
+            
+            if not password_match:
+                # print("Plain text verification failed - raising 401")
+                raise HTTPException(status_code=401, detail="Invalid username or password")
+        
+        # print("Login successful - returning success response")
+        return {
+            "success": True,
+            "client_id": user["client_id"],
+            "chatbot_key": user["chatbot_key"],
+            "message": "Login successful"
+        }
+        
+    except HTTPException as http_exc:
+        # print(f"HTTPException: {http_exc.detail}")
+        raise http_exc
+    except Exception as e:
+        # print(f"Unexpected login error: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    finally:
+        if conn:
+            conn.close()
 
 # ----------------------------
 # 🔹 CLIENT MANAGEMENT
@@ -313,19 +336,6 @@ def get_sessions(client_id: str):
     return {"sessions": sessions}
 
 
-# @app.get("/client/{client_id}/chats")
-# def get_chats(client_id: str, session_id: str):
-#     """Return all chat messages for a given client + session"""
-#     conn = get_db()
-#     cursor = conn.cursor()
-#     cursor.execute(
-#         "SELECT session_id, role, message, user_agent, created_at FROM chats WHERE client_id=? AND session_id=? ORDER BY created_at ASC",
-#         (client_id, session_id)
-#     )
-#     chats = [dict(row) for row in cursor.fetchall()]
-#     conn.close()
-#     return {"chats": chats}
-# 
 @app.get("/client/{client_id}/chats")
 def get_chats(client_id: str, session_id: str):
     """Return all chat messages for a given client + session"""
