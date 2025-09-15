@@ -8,3 +8,4 @@ accelerate
 fastapi[standard]
 python-dotenv
 groq
+requests

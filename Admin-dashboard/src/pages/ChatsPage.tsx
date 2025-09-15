@@ -15,6 +15,7 @@ interface Chat {
   message: string;
   user_agent: string;
   created_at: string;
+  country_code?: string; // Add country_code to the interface
 }
 
 export default function ChatsPage() {
@@ -61,6 +62,18 @@ export default function ChatsPage() {
         .finally(() => setLoading(false));
     }
   }, [selectedClient, selectedSession]);
+
+  // Helper function to get country flag emoji
+  const getCountryFlag = (countryCode: string | undefined) => {
+    if (!countryCode || countryCode === "Unknown") return "🌍";
+    
+    // Convert country code to flag emoji
+    const codePoints = countryCode
+      .toUpperCase()
+      .split('')
+      .map(char => 127397 + char.charCodeAt(0));
+    return String.fromCodePoint(...codePoints);
+  };
 
   return (
     <div className="dashboard-container">
@@ -130,6 +143,11 @@ export default function ChatsPage() {
               >
                 <div className="message-content">{chat.message}</div>
                 <div className="message-meta">
+                  <span className="country-flag">
+                    {getCountryFlag(chat.country_code)} 
+                    {chat.country_code || "Unknown"}
+                  </span>
+                  {" | "}
                   [{chat.role}] {new Date(chat.created_at).toLocaleString()} | UA:{" "}
                   {chat.user_agent}
                 </div>
