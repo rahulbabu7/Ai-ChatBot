@@ -9,7 +9,8 @@ def get_db():
     return conn
 
 def init_db():
-    conn = get_db()
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
     # Users table (clients + admins)
@@ -36,7 +37,8 @@ def init_db():
             role TEXT NOT NULL,         /* "user" or "assistant" */
             message TEXT NOT NULL,
             user_agent TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            country_code TEXT DEFAULT 'unknown'
         )
     """)
 
@@ -44,4 +46,5 @@ def init_db():
     conn.close()
 
 # ✅ Initialize DB when server starts
+
 init_db()
