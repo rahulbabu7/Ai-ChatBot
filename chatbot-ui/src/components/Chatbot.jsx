@@ -8,32 +8,32 @@ const Chatbot = () => {
   const [chatbotKey, setChatbotKey] = useState("535e999373d547139f7ad4e6969738c3");
 
   // Client options
-  const clientOptions = [
-    { 
-      id: "kochidigital_d0aef1", 
-      name: "Kochi Digital",
-      key: "535e999373d547139f7ad4e6969738c3"
-    },
-    { 
-      id: "sjcet", 
-      name: "SJCET",
-      key: "your_sjcet_key_here"
-    },
-    { 
-      id: "client2", 
-      name: "Client 2",
-      key: "your_client2_key_here"
-    }
-  ];
+  // const clientOptions = [
+  //   { 
+  //     id: "kochidigital_d0aef1", 
+  //     name: "Kochi Digital",
+  //     key: "535e999373d547139f7ad4e6969738c3"
+  //   },
+  //   { 
+  //     id: "sjcet", 
+  //     name: "SJCET",
+  //     key: "your_sjcet_key_here"
+  //   },
+  //   { 
+  //     id: "client2", 
+  //     name: "Client 2",
+  //     key: "your_client2_key_here"
+  //   }
+  // ];
 
   // Update chatbot key when client changes
-  const handleClientChange = (newClientId) => {
-    const selectedClient = clientOptions.find(client => client.id === newClientId);
-    if (selectedClient) {
-      setClientId(newClientId);
-      setChatbotKey(selectedClient.key);
-    }
-  };
+  // const handleClientChange = (newClientId) => {
+  //   const selectedClient = clientOptions.find(client => client.id === newClientId);
+  //   if (selectedClient) {
+  //     setClientId(newClientId);
+  //     setChatbotKey(selectedClient.key);
+  //   }
+  // };
 
   const handleToggleChat = () => {
     setIsOpen(!isOpen);
@@ -46,7 +46,7 @@ const Chatbot = () => {
   return (
     <div style={{ position: 'fixed', bottom: '20px', right: '20px', zIndex: 1000 }}>
       {/* Client Selector */}
-      <div style={{
+      {/* <div style={{
         marginBottom: '10px',
         backgroundColor: 'white',
         padding: '10px',
@@ -82,7 +82,7 @@ const Chatbot = () => {
             </option>
           ))}
         </select>
-      </div>
+      </div>*/}
 
       {/* Chat Window */}
       {isOpen && (

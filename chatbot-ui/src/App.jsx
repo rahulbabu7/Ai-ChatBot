@@ -4,10 +4,12 @@ import Chatbot from "./components/Chatbot";
 
 function App() {
   return (
-    <div className="app-container">
-      <h1>Welcome to SmartAssist AI</h1>
+    <>
+      {/* <h1>Welcome to SmartAssist AI</h1>*/}
       <Chatbot />
-    </div>
+    
+    </>
+    
   );
 }
 
