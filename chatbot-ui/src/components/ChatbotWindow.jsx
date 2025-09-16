@@ -98,8 +98,8 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey }) => {
   return (
     <div style={{
       position: 'fixed',
-      top: 400,
-      left: 1200,
+      top: 150,
+      left: 1000,
       right: 0,
       bottom: 0,
       backgroundColor: '#f0f2f5',
