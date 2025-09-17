@@ -1,41 +1,126 @@
 import React, { useState } from "react";
-import { FaComments } from "react-icons/fa";
+import { MessageCircle } from "lucide-react";
 import ChatbotWindow from "./ChatbotWindow";
-import "./Chatbot.css";
 
 const Chatbot = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [clientId, setClientId] = useState("kochidigital_d0aef1"); // default client
-  const [chatbotKey, setChatbotKey] = useState("535e999373d547139f7ad4e6969738c3"); // 🔑 replace with real key from signup/login
+  const [clientId, setClientId] = useState("kochidigital_d0aef1");
+  const [chatbotKey, setChatbotKey] = useState("535e999373d547139f7ad4e6969738c3");
+
+  // Client options
+  // const clientOptions = [
+  //   { 
+  //     id: "kochidigital_d0aef1", 
+  //     name: "Kochi Digital",
+  //     key: "535e999373d547139f7ad4e6969738c3"
+  //   },
+  //   { 
+  //     id: "sjcet", 
+  //     name: "SJCET",
+  //     key: "your_sjcet_key_here"
+  //   },
+  //   { 
+  //     id: "client2", 
+  //     name: "Client 2",
+  //     key: "your_client2_key_here"
+  //   }
+  // ];
+
+  // Update chatbot key when client changes
+  // const handleClientChange = (newClientId) => {
+  //   const selectedClient = clientOptions.find(client => client.id === newClientId);
+  //   if (selectedClient) {
+  //     setClientId(newClientId);
+  //     setChatbotKey(selectedClient.key);
+  //   }
+  // };
+
+  const handleToggleChat = () => {
+    setIsOpen(!isOpen);
+  };
+
+  const handleCloseChat = () => {
+    setIsOpen(false);
+  };
 
   return (
-    <div className="chatbot-container">
-      {/* Dropdown to select client */}
-      <div className="client-selector">
-        <label htmlFor="client">Choose Client: </label>
+    <div style={{ position: 'fixed', bottom: '20px', right: '20px', zIndex: 1000 }}>
+      {/* Client Selector */}
+      {/* <div style={{
+        marginBottom: '10px',
+        backgroundColor: 'white',
+        padding: '10px',
+        borderRadius: '8px',
+        boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+        display: isOpen ? 'none' : 'block'
+      }}>
+        <label style={{
+          fontSize: '12px',
+          fontWeight: '500',
+          color: '#6b7280',
+          marginBottom: '5px',
+          display: 'block'
+        }}>
+          Choose Client:
+        </label>
         <select
-          id="client"
           value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
+          onChange={(e) => handleClientChange(e.target.value)}
+          style={{
+            width: '200px',
+            padding: '6px 8px',
+            border: '1px solid #d1d5db',
+            borderRadius: '6px',
+            fontSize: '13px',
+            backgroundColor: 'white',
+            color: '#374151'
+          }}
         >
-          <option value={chatbotKey}>Kochi Digital</option>
-          <option value="sjcet">SJCET</option>
-          <option value="client2">Client 2</option>
+          {clientOptions.map((client) => (
+            <option key={client.id} value={client.id}>
+              {client.name}
+            </option>
+          ))}
         </select>
-      </div>
+      </div>*/}
 
-      {/* Chat window */}
+      {/* Chat Window */}
       {isOpen && (
         <ChatbotWindow
           clientId={clientId}
-          chatbotKey={chatbotKey}   // ✅ pass chatbot key
-          onClose={() => setIsOpen(false)}
+          chatbotKey={chatbotKey}
+          onClose={handleCloseChat}
         />
       )}
 
-      {/* Floating button */}
-      <button className="chatbot-button" onClick={() => setIsOpen(!isOpen)}>
-        <FaComments size={24} />
+      {/* Floating Chat Button */}
+      <button
+        onClick={handleToggleChat}
+        style={{
+          width: '56px',
+          height: '56px',
+          backgroundColor: '#6366f1',
+          border: 'none',
+          borderRadius: '50%',
+          color: 'white',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 4px 12px rgba(99, 102, 241, 0.4)',
+          transition: 'all 0.2s ease',
+          fontSize: 0 // Hide text, show only icon
+        }}
+        onMouseOver={(e) => {
+          e.target.style.backgroundColor = '#5856f3';
+          e.target.style.transform = 'scale(1.05)';
+        }}
+        onMouseOut={(e) => {
+          e.target.style.backgroundColor = '#6366f1';
+          e.target.style.transform = 'scale(1)';
+        }}
+      >
+        <MessageCircle size={24} />
       </button>
     </div>
   );
