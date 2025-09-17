@@ -32,7 +32,7 @@
 
 /* Visitor card */
 .visitor-card {
-  background: #44bd32;
+  background: #37e637;
   padding: 15px;
   border-radius: 8px;
   text-align: center;
@@ -69,7 +69,7 @@
 
 .session-item.active,
 .session-item:hover {
-  background: #40739e;
+  background: #409e5c;
 }
 
 .session-id {
@@ -113,19 +113,19 @@
 }
 
 .chat-message.user {
-  background: #dcdde1;
+  background: #ffffff;
   align-self: flex-end;
 }
 
 .chat-message.bot {
-  background: #40739e;
-  color: #fff;
+  background: #38485f;
+  color: #f7f5f4;
   align-self: flex-start;
 }
 
 .message-meta {
   font-size: 11px;
-  color: #718093;
+  color: #0bf199;
   margin-top: 5px;
 }
 
