@@ -7,6 +7,7 @@ import PrivateRoute from "./components/PrivateRoute";
 import Dashboard from "./pages/Dashboard";
 import ChatsPage from "./pages/ChatsPage";
 import InactivityLogout from "./pages/InactivityLogout";
+import Domain from "./pages/Domain";
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/dashboard/:clientId" element={<Dashboard />} />
         <Route path="/chats" element={<ChatsPage />} />
+        <Route path="/domain" element={<Domain />} />
 
 
         {/* Protected Admin Route */}

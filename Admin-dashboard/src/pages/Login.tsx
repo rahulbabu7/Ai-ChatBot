@@ -13,7 +13,7 @@ const Login = () => {
 
   useEffect(() => {
     // Check if the user is already logged in from storage
-    const storedClientId = localStorage.getItem("client_id") || sessionStorage.getItem("client_id");
+    const storedClientId = localStorage.getItem("clientId") || sessionStorage.getItem("clientId");
     if (storedClientId) {
       navigate(`/dashboard/${storedClientId}`);
     }
@@ -24,6 +24,7 @@ const Login = () => {
       setLog("❌ Please fill Username & Password");
       return;
     }
+
     try {
       const res = await fetch(`${API}/auth/login`, {
         method: "POST",
@@ -33,20 +34,29 @@ const Login = () => {
           password,
         }),
       });
+
       const data = await res.json();
+      console.log("Login response:", data); // Debug log
 
       if (data.success) {
-        const id = data.client_id;
+        const clientId = data.client_id;
+        const chatbotKey = data.chatbot_key;
+
+        // Store both clientId and chatbotKey
         if (remember) {
-          localStorage.setItem("client_id", id);
+          localStorage.setItem("clientId", clientId);
+          localStorage.setItem("chatbotKey", chatbotKey);
         } else {
-          sessionStorage.setItem("client_id", id);
+          sessionStorage.setItem("clientId", clientId);
+          sessionStorage.setItem("chatbotKey", chatbotKey);
         }
-        navigate(`/dashboard/${id}`); // ✅ redirect with clientId in URL
+
+        console.log("Stored credentials:", { clientId, chatbotKey }); // Debug log
+        navigate(`/dashboard/${clientId}`);
       } else {
         setLog(`❌ ${data.message || "Login failed"}`);
       }
-    } catch (err: any) {
+    } catch (err) {
       setLog(`❌ Error: ${err.message}`);
     }
   };
@@ -56,7 +66,7 @@ const Login = () => {
       {/* Client Login Card */}
       <div className="auth-card">
         <h2 className="auth-title">Client Login</h2>
-
+        
         <label htmlFor="username">Username</label>
         <input
           id="username"
@@ -65,7 +75,7 @@ const Login = () => {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
         />
-
+        
         <label htmlFor="password">Password</label>
         <input
           id="password"
@@ -74,7 +84,7 @@ const Login = () => {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
-
+        
         <div className="auth-options">
           <label>
             <input
@@ -88,7 +98,7 @@ const Login = () => {
             Forgot Password?
           </Link>
         </div>
-
+        
         <button className="auth-btn" onClick={handleLogin}>
           Login
         </button>

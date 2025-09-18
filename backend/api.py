@@ -229,32 +229,32 @@ def signup(req: SignupRequest):
 def login(req: LoginRequest):
     conn = get_db()
     cursor = conn.cursor()
-    
+
     try:
         print(f"Login attempt for username: '{req.username}'")
         print(f"Login attempt for password: '{req.password}'")
-        
+
         cursor.execute("SELECT * FROM users WHERE username=?", (req.username,))
         user = cursor.fetchone()
-        
+
         # print(f"User found in database: {user is not None}")
-        
+
         if not user:
             # print("User not found - raising 401")
             raise HTTPException(status_code=401, detail="Invalid username or password")
-        
+
         stored_password = user['password']
         # print(f"Stored password: '{stored_password}'")
         # print(f"Stored password type: {type(stored_password)}")
         # print(f"Stored password length: {len(stored_password)}")
-        
+
         # Convert bytes to string if needed
         if isinstance(stored_password, bytes):
             stored_password = stored_password.decode('utf-8')
             # print(f"Converted to string: '{stored_password}'")
-        
+
         # print(f"Password starts with bcrypt prefix: {stored_password.startswith(('$2a$', '$2b$', '$2y$'))}")
-        
+
         # Check if password is hashed (bcrypt hashes start with $2a$, $2b$, or $2y$)
         if stored_password.startswith(('$2a$', '$2b$', '$2y$')):
             print("Using bcrypt verification")
@@ -262,7 +262,7 @@ def login(req: LoginRequest):
             stored_password_bytes = stored_password.encode('utf-8')
             password_match = bcrypt.checkpw(req.password.encode('utf-8'), stored_password_bytes)
             # print(f"Bcrypt password match: {password_match}")
-            
+
             if not password_match:
                 # print("Bcrypt verification failed - raising 401")
                 raise HTTPException(status_code=401, detail="Invalid username or password")
@@ -271,11 +271,11 @@ def login(req: LoginRequest):
             # It's a plain text password - direct comparison
             password_match = req.password == stored_password
             # print(f"Plain text password match: {password_match}")
-            
+
             if not password_match:
                 # print("Plain text verification failed - raising 401")
                 raise HTTPException(status_code=401, detail="Invalid username or password")
-        
+
         # print("Login successful - returning success response")
         return {
             "success": True,
@@ -283,7 +283,7 @@ def login(req: LoginRequest):
             "chatbot_key": user["chatbot_key"],
             "message": "Login successful"
         }
-        
+
     except HTTPException as http_exc:
         # print(f"HTTPException: {http_exc.detail}")
         raise http_exc
@@ -295,6 +295,94 @@ def login(req: LoginRequest):
     finally:
         if conn:
             conn.close()
+
+# Add these imports at the top of your main.py
+from db import get_client_by_domain, register_domain as db_register_domain
+
+# Add these endpoints to your main.py file
+
+@app.get("/client/lookup-by-domain")
+def lookup_client_by_domain(domain: str):
+    """Lookup client_id and chatbot_key by domain"""
+    try:
+        result = get_client_by_domain(domain)
+
+        if not result:
+            raise HTTPException(status_code=404, detail="Domain not found")
+
+        return {
+            "client_id": result["client_id"],
+            "chatbot_key": result["chatbot_key"],
+            "client_name": result["client_name"]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lookup failed: {str(e)}")
+
+@app.get("/client/{client_id}/domains")
+def get_client_domains(client_id: str, x_chatbot_key: str = Header(None)):
+    """Get all domains registered for a specific client"""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Verify client + chatbot_key
+    cursor.execute("SELECT * FROM users WHERE client_id=? AND chatbot_key=?", (client_id, x_chatbot_key))
+    client = cursor.fetchone()
+    if not client:
+        raise HTTPException(status_code=403, detail="Invalid client or key")
+
+    try:
+        cursor.execute("""
+            SELECT domain, created_at
+            FROM domain_mappings
+            WHERE client_id = ?
+            ORDER BY created_at DESC
+        """, (client_id,))
+
+        domains = [dict(row) for row in cursor.fetchall()]
+
+        return {"domains": domains}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch domains: {str(e)}")
+    finally:
+        conn.close()
+
+@app.post("/client/register-my-domains/{client_id}")
+def register_client_domains(client_id: str, domains: list[str], x_chatbot_key: str = Header(None)):
+    """Allow a client to register their own domains"""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Verify client + chatbot_key
+    cursor.execute("SELECT * FROM users WHERE client_id=? AND chatbot_key=?", (client_id, x_chatbot_key))
+    client = cursor.fetchone()
+    if not client:
+        raise HTTPException(status_code=403, detail="Invalid client or key")
+    conn.close()
+
+    registered_domains = []
+    failed_domains = []
+
+    for domain in domains:
+        success = db_register_domain(domain, client_id)
+        if success:
+            clean_domain = domain.lower().replace('https://', '').replace('http://', '').replace('www.', '').rstrip('/')
+            registered_domains.append(clean_domain)
+        else:
+            failed_domains.append(domain)
+
+    return {
+        "success": len(failed_domains) == 0,
+        "registered_domains": registered_domains,
+        "failed_domains": failed_domains,
+        "message": f"Successfully registered {len(registered_domains)} domain(s)"
+    }
+
+
+
 
 # ----------------------------
 # 🔹 CLIENT MANAGEMENT
