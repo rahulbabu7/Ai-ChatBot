@@ -16,7 +16,7 @@ const navigation = {
       icon: icons.dashboard,
       url: '/'
     },
-    {
+    {  
       id: 'dashboard-admin',
       title: 'Dashboard Admin',
       type: 'item',
@@ -29,6 +29,13 @@ const navigation = {
       type: 'item',
       icon: icons.layouts,
       url: '/dashboard-client'
+    },
+    {
+      id: 'domain',
+      title: 'Domain',
+      type: 'item',
+      icon: icons.layouts,
+      url: '/domain'
     }
   ]
 };

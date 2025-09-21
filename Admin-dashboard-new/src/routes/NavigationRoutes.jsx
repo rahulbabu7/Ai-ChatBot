@@ -25,4 +25,4 @@ const NavigationRoutes = {
   ]
 };
 
-export default NavigationRoutes;
+export default NavigationRoutes; 
