@@ -1,105 +1,107 @@
 import PropTypes from 'prop-types';
 import { useState } from 'react';
-
-// react-bootstrap
+import { Link } from 'react-router-dom';
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
-import Image from 'react-bootstrap/Image';
 import InputGroup from 'react-bootstrap/InputGroup';
-import Stack from 'react-bootstrap/Stack';
-
-// third-party
-import { useForm } from 'react-hook-form';
-
-// project-imports
 import MainCard from 'components/MainCard';
-import { emailSchema, passwordSchema } from 'utils/validationSchema';
 
-// assets
-import DarkLogo from 'assets/images/logo-dark.svg';
+export default function AuthLogin({ className }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(false);
+  const [log, setLog] = useState('');
 
-// ==============================|| AUTH LOGIN FORM ||============================== //
+  const API = 'http://localhost:8000';
 
-export default function AuthLoginForm({ className, link }) {
-  const [showPassword, setShowPassword] = useState(false);
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (!username || !password) {
+      setLog('❌ Please fill Username & Password');
+      return;
+    }
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors }
-  } = useForm();
+    try {
+      const res = await fetch(`${API}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
 
-  const togglePasswordVisibility = () => {
-    setShowPassword((prevState) => !prevState);
-  };
+      if (data.success) {
+        const id = data.client_id;
+        if (remember) localStorage.setItem('client_id', id);
+        else sessionStorage.setItem('client_id', id);
 
-  const onSubmit = () => {
-    reset();
+        // 🔹 Redirect to Datta Able dashboard
+        window.location.href = '/demos/admin-templates/datta-able/react/free/';
+      } else {
+        setLog(`❌ ${data.message || 'Login failed'}`);
+      }
+    } catch (err) {
+      setLog(`❌ Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
   };
 
   return (
     <MainCard className="mb-0">
-      <div className="text-center">
-        <a>
-          <Image src={DarkLogo} alt="img" />
-        </a>
-      </div>
-      <Form onSubmit={handleSubmit(onSubmit)}>
+      <Form onSubmit={handleLogin}>
         <h4 className={`text-center f-w-500 mt-4 mb-3 ${className}`}>Login</h4>
-        <Form.Group className="mb-3" controlId="formEmail">
+
+        <Form.Group className="mb-3" controlId="formUsername">
           <Form.Control
-            type="email"
-            placeholder="Email Address"
-            {...register('email', emailSchema)}
-            isInvalid={!!errors.email}
-            className={className && 'bg-transparent border-white text-white border-opacity-25 '}
+            type="text"
+            placeholder="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
           />
-          <Form.Control.Feedback type="invalid">{errors.email?.message}</Form.Control.Feedback>
         </Form.Group>
+
         <Form.Group className="mb-3" controlId="formPassword">
           <InputGroup>
             <Form.Control
-              type={showPassword ? 'text' : 'password'}
+              type="password"
               placeholder="Password"
-              {...register('password', passwordSchema)}
-              isInvalid={!!errors.password}
-              className={className && 'bg-transparent border-white text-white border-opacity-25 '}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
             />
-            <Button onClick={togglePasswordVisibility}>
-              {showPassword ? <i className="ti ti-eye" /> : <i className="ti ti-eye-off" />}
-            </Button>
           </InputGroup>
-          <Form.Control.Feedback type="invalid">{errors.password?.message}</Form.Control.Feedback>
         </Form.Group>
 
-        <Stack direction="horizontal" className="mt-1 justify-content-between align-items-center">
-          <Form.Group controlId="customCheckc1">
-            <Form.Check
-              type="checkbox"
-              label="Remember me?"
-              defaultChecked
-              className={`input-primary ${className ? className : 'text-muted'} `}
-            />
-          </Form.Group>
-          <a href="#!" className={`text-secondary f-w-400 mb-0  ${className}`}>
+        {/* Remember me + Forgot Password */}
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <Form.Check
+            type="checkbox"
+            label="Remember me"
+            checked={remember}
+            onChange={() => setRemember(!remember)}
+          />
+          <Link to="/forgot-password" className="text-primary">
             Forgot Password?
-          </a>
-        </Stack>
-        <div className="text-center mt-4">
-          <Button type="submit" className="shadow px-sm-4">
-            Login
-          </Button>
+          </Link>
         </div>
-        <Stack direction="horizontal" className="justify-content-between align-items-end mt-4">
-          <h6 className={`f-w-500 mb-0 ${className}`}>Don't have an Account?</h6>
-          <a href={link} className="link-primary">
-            Create Account
-          </a>
-        </Stack>
+
+        <Button type="submit" className="mt-3 w-100">
+          Login
+        </Button>
+
+        {log && (
+          <p className={`mt-3 text-center ${log.startsWith('✅') ? 'text-success' : 'text-danger'}`}>
+            {log}
+          </p>
+        )}
+
+        {/* New Client register link */}
+        <div className="mt-3 text-center">
+          New Client? 
+          <Link to="/register" className="d-block">
+            Register Here
+          </Link>
+        </div>
       </Form>
     </MainCard>
   );
 }
 
-AuthLoginForm.propTypes = { className: PropTypes.string, link: PropTypes.string, resetLink: PropTypes.string };
+AuthLogin.propTypes = { className: PropTypes.string };
