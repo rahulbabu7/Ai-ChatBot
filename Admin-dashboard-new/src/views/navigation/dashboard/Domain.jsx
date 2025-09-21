@@ -14,35 +14,68 @@ const Domain = () => {
   });
 
   useEffect(() => {
-    // Get client credentials from localStorage or sessionStorage
-    const clientId = localStorage.getItem('clientId') || sessionStorage.getItem('clientId');
-    const chatbotKey = localStorage.getItem('chatbotKey') || sessionStorage.getItem('chatbotKey');
+    // Enhanced debugging
+    console.log('Domain component useEffect triggered');
+    console.log('All localStorage keys:', Object.keys(localStorage));
+    console.log('All sessionStorage keys:', Object.keys(sessionStorage));
     
-    console.log('Domain component - stored credentials:', { clientId, chatbotKey }); // Debug log
+    // Get client credentials from localStorage or sessionStorage
+    // Check for both camelCase and snake_case versions
+    const clientId = localStorage.getItem('clientId') || sessionStorage.getItem('clientId') ||
+                     localStorage.getItem('client_id') || sessionStorage.getItem('client_id');
+    const chatbotKey = localStorage.getItem('chatbotKey') || sessionStorage.getItem('chatbotKey') ||
+                       localStorage.getItem('chatbot_key') || sessionStorage.getItem('chatbot_key');
+    
+    console.log('Domain component - stored credentials:', { 
+      clientId: clientId || 'NOT FOUND', 
+      chatbotKey: chatbotKey ? `${chatbotKey.slice(0, 8)}...` : 'NOT FOUND',
+      hasClientId: !!clientId,
+      hasChatbotKey: !!chatbotKey
+    });
     
     if (clientId && chatbotKey) {
+      console.log('Credentials found, setting state and fetching domains');
       setClientCredentials({ clientId, chatbotKey });
       fetchClientDomains(clientId, chatbotKey);
-    } else {
+    } else if (clientId && !chatbotKey) {
+      console.log('Only clientId found, missing chatbotKey');
       setMessage({ 
         type: 'error', 
-        text: 'Please login first to manage your domains.' 
+        text: 'Missing authentication key. Please login again.' 
+      });
+      setIsLoading(false);
+    } else {
+      console.log('Missing credentials - clientId:', !!clientId, 'chatbotKey:', !!chatbotKey);
+      setMessage({ 
+        type: 'error', 
+        text: 'Please login first to manage your domains. No stored credentials found.' 
       });
       setIsLoading(false);
     }
   }, []);
 
   const fetchClientDomains = async (clientId, chatbotKey) => {
+    console.log('fetchClientDomains called with:', { clientId, hasKey: !!chatbotKey });
+    
     try {
-      const response = await fetch(`http://localhost:8000/client/${clientId}/domains`, {
+      const url = `http://localhost:8000/client/${clientId}/domains`;
+      console.log('Fetching from URL:', url);
+      
+      const response = await fetch(url, {
         headers: { 'x-chatbot-key': chatbotKey }
       });
       
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('Received data:', data);
         setDomains(data.domains || []);
       } else {
-        throw new Error('Failed to fetch domains');
+        const errorText = await response.text();
+        console.error('Response error:', errorText);
+        throw new Error(`Failed to fetch domains: ${response.status}`);
       }
     } catch (error) {
       console.error('Failed to fetch domains:', error);
@@ -53,11 +86,19 @@ const Domain = () => {
   };
 
   const addDomain = async () => {
-    if (!newDomain.trim()) return;
+    if (!newDomain.trim()) {
+      console.log('No domain entered');
+      return;
+    }
 
+    console.log('Adding domain:', newDomain.trim());
     setIsAdding(true);
+    
     try {
-      const response = await fetch(`http://localhost:8000/client/register-my-domains/${clientCredentials.clientId}`, {
+      const url = `http://localhost:8000/client/register-my-domains/${clientCredentials.clientId}`;
+      console.log('POST to URL:', url);
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -66,7 +107,9 @@ const Domain = () => {
         body: JSON.stringify([newDomain.trim()])
       });
 
+      console.log('Add domain response status:', response.status);
       const data = await response.json();
+      console.log('Add domain response data:', data);
       
       if (response.ok && data.success) {
         setMessage({ type: 'success', text: `Domain "${data.registered_domains[0]}" registered successfully!` });
@@ -76,6 +119,7 @@ const Domain = () => {
         setMessage({ type: 'error', text: data.message || 'Failed to register domain' });
       }
     } catch (error) {
+      console.error('Add domain error:', error);
       setMessage({ type: 'error', text: 'Network error. Please try again.' });
     } finally {
       setIsAdding(false);
@@ -84,9 +128,15 @@ const Domain = () => {
     setTimeout(() => setMessage({ type: '', text: '' }), 5000);
   };
 
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    setMessage({ type: 'success', text: 'Copied to clipboard!' });
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setMessage({ type: 'success', text: 'Copied to clipboard!' });
+      console.log('Text copied to clipboard');
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+      setMessage({ type: 'error', text: 'Failed to copy to clipboard' });
+    }
     setTimeout(() => setMessage({ type: '', text: '' }), 2000);
   };
 
@@ -100,6 +150,14 @@ const Domain = () => {
   document.body.appendChild(iframe);
 </script>`;
 
+  // Debug render
+  console.log('Domain component rendering with state:', {
+    isLoading,
+    hasClientId: !!clientCredentials.clientId,
+    domainsCount: domains.length,
+    messageType: message.type
+  });
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -108,6 +166,17 @@ const Domain = () => {
     );
   }
 
+  // Test credentials function for debugging
+  const setTestCredentials = () => {
+    const testClientId = 'test-client-id';
+    const testChatbotKey = 'test-chatbot-key-12345';
+    localStorage.setItem('clientId', testClientId);
+    localStorage.setItem('chatbotKey', testChatbotKey);
+    setClientCredentials({ clientId: testClientId, chatbotKey: testChatbotKey });
+    console.log('Test credentials set');
+    window.location.reload(); // Reload to test
+  };
+
   if (!clientCredentials.clientId) {
     return (
       <div className="max-w-2xl mx-auto p-6">
@@ -115,6 +184,16 @@ const Domain = () => {
           <div className="flex items-center gap-2">
             <AlertCircle className="w-5 h-5 text-red-600" />
             <p className="text-red-800">Please login first to manage your domains.</p>
+          </div>
+          <div className="mt-4 space-y-2">
+            <p className="text-sm text-red-700">Debug Info:</p>
+            <p className="text-xs text-red-600">No credentials found in localStorage or sessionStorage</p>
+            <button 
+              onClick={setTestCredentials}
+              className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
+            >
+              Set Test Credentials (Debug)
+            </button>
           </div>
         </div>
       </div>
