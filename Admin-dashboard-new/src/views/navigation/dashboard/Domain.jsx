@@ -95,13 +95,13 @@ const Domain = () => {
   };
 
   const integrationCode = `<!-- Add this to your website -->
-<div id="chatbot-container"></div>
-<script>
-  const iframe = document.createElement('iframe');
-  iframe.src = 'http://localhost:3000/chatbot';
-  iframe.style.cssText = 'position:fixed;bottom:20px;right:20px;width:400px;height:600px;border:none;z-index:1000;';
-  document.body.appendChild(iframe);
-</script>`;
+  <div id="chatbot-container"></div>
+  <script>
+    const iframe = document.createElement('iframe');
+    iframe.src = 'http://localhost:3000/chatbot';
+    iframe.style.cssText = 'position:fixed;bottom:20px;right:20px;width:400px;height:600px;border:none;z-index:1000;';
+    document.body.appendChild(iframe);
+  </script>`;
 
   if (isLoading) return <div className="flex items-center justify-center min-h-screen">Loading domains...</div>;
   if (!token) return <div className="text-center mt-10 text-red-600">Please login first to manage your domains.</div>;
@@ -110,7 +110,7 @@ const Domain = () => {
     <div className="max-w-4xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-lg">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="px-4 py-4 border-b border-gray-200 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Globe className="w-6 h-6 text-blue-600" />
             <div>
@@ -134,7 +134,7 @@ const Domain = () => {
 
         {/* Integration Code */}
         {showIntegrationCode && (
-          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+          <div className="px-4 py-4 bg-gray-50 border-b border-gray-200">
             <h3 className="text-lg font-medium text-gray-900 mb-3">Integration Code</h3>
             <div className="flex items-center justify-between mb-2">
               <label className="text-sm font-medium text-gray-700">Add this to your website</label>
@@ -147,7 +147,7 @@ const Domain = () => {
         )}
 
         {/* Add Domain */}
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-4 py-4 border-b border-gray-200">
           <h3 className="text-lg font-medium text-gray-900 mb-3">Add New Domain</h3>
           <div className="flex gap-3">
             <input
@@ -165,7 +165,7 @@ const Domain = () => {
         </div>
 
         {/* Domains List */}
-        <div className="px-6 py-4">
+        <div className="px-4 py-4">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Registered Domains</h3>
           {domains.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
