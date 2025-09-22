@@ -8,49 +8,24 @@ const Domain = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [showIntegrationCode, setShowIntegrationCode] = useState(false);
-  const [clientCredentials, setClientCredentials] = useState({ clientId: '', chatbotKey: '' });
 
-  // Get latest clientId from storage
-  const getLatestClientCredentials = () => {
-    const localClientKeys = Object.keys(localStorage).filter(k => k.startsWith('clientId_'));
-    const sessionClientKeys = Object.keys(sessionStorage).filter(k => k.startsWith('clientId_'));
-
-    const allClientIds = [...localClientKeys, ...sessionClientKeys].map(key => {
-      return localStorage.getItem(key) || sessionStorage.getItem(key);
-    });
-
-    if (allClientIds.length === 0) return null;
-
-    const latestClientId = allClientIds[allClientIds.length - 1];
-    const chatbotKey = localStorage.getItem(`chatbotKey_${latestClientId}`) || sessionStorage.getItem(`chatbotKey_${latestClientId}`);
-
-    return { clientId: latestClientId, chatbotKey: chatbotKey || '' };
-  };
+  // Get JWT token from storage
+  const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
 
   useEffect(() => {
-    const credentials = getLatestClientCredentials();
-
-    if (!credentials?.clientId) {
+    if (!token) {
       setMessage({ type: 'error', text: 'Please login first to manage your domains.' });
       setIsLoading(false);
       return;
     }
+    fetchClientDomains();
+  }, [token]);
 
-    if (!credentials.chatbotKey) {
-      setMessage({ type: 'error', text: 'Missing authentication key. Please login again.' });
-      setIsLoading(false);
-      return;
-    }
-
-    setClientCredentials(credentials);
-    fetchClientDomains(credentials.clientId, credentials.chatbotKey);
-  }, []);
-
-  const fetchClientDomains = async (clientId, chatbotKey) => {
+  const fetchClientDomains = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/client/${clientId}/domains`, {
-        headers: { 'x-chatbot-key': chatbotKey }
+      const res = await fetch('http://localhost:8000/client/domains/me', {
+        headers: { 'x-token': token }
       });
       if (!res.ok) throw new Error('Failed to fetch domains');
       const data = await res.json();
@@ -66,12 +41,9 @@ const Domain = () => {
     if (!newDomain.trim()) return;
     setIsAdding(true);
     try {
-      const res = await fetch(`http://localhost:8000/client/register-my-domains/${clientCredentials.clientId}`, {
+      const res = await fetch('http://localhost:8000/client/me/register-domains', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-chatbot-key': clientCredentials.chatbotKey
-        },
+        headers: { 'Content-Type': 'application/json', 'x-token': token },
         body: JSON.stringify([newDomain.trim()])
       });
 
@@ -79,7 +51,7 @@ const Domain = () => {
       if (res.ok && data.success) {
         setMessage({ type: 'success', text: `Domain "${data.registered_domains[0]}" registered successfully!` });
         setNewDomain('');
-        fetchClientDomains(clientCredentials.clientId, clientCredentials.chatbotKey);
+        fetchClientDomains();
       } else {
         setMessage({ type: 'error', text: data.message || 'Failed to register domain' });
       }
@@ -91,22 +63,21 @@ const Domain = () => {
     }
   };
 
-  // Delete domain
   const deleteDomain = async (domainName) => {
-    if (!window.confirm(`Are you sure you want to delete the domain "${domainName}"?`)) return;
+    if (!window.confirm(`Are you sure you want to delete "${domainName}"?`)) return;
 
     try {
-      const res = await fetch(`http://localhost:8000/client/${clientCredentials.clientId}/domains/${domainName}`, {
+      const res = await fetch(`http://localhost:8000/client/domains/me/${domainName}`, {
         method: 'DELETE',
-        headers: { 'x-chatbot-key': clientCredentials.chatbotKey }
+        headers: { 'x-token': token }
       });
 
       if (!res.ok) throw new Error('Failed to delete domain');
 
       setMessage({ type: 'success', text: `Domain "${domainName}" deleted successfully!` });
-      fetchClientDomains(clientCredentials.clientId, clientCredentials.chatbotKey);
+      fetchClientDomains();
     } catch (error) {
-      setMessage({ type: 'error', text: `Failed to delete domain "${domainName}".` });
+      setMessage({ type: 'error', text: `Failed to delete "${domainName}".` });
     } finally {
       setTimeout(() => setMessage({ type: '', text: '' }), 5000);
     }
@@ -133,18 +104,7 @@ const Domain = () => {
 </script>`;
 
   if (isLoading) return <div className="flex items-center justify-center min-h-screen">Loading domains...</div>;
-
-  if (!clientCredentials.clientId)
-    return (
-      <div className="max-w-2xl mx-auto p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-5 h-5 text-red-600" />
-            <p className="text-red-800">Please login first to manage your domains.</p>
-          </div>
-        </div>
-      </div>
-    );
+  if (!token) return <div className="text-center mt-10 text-red-600">Please login first to manage your domains.</div>;
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -158,10 +118,7 @@ const Domain = () => {
               <p className="text-sm text-gray-600">Manage domains where your chatbot will appear</p>
             </div>
           </div>
-          <button
-            onClick={() => setShowIntegrationCode(!showIntegrationCode)}
-            className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
-          >
+          <button onClick={() => setShowIntegrationCode(!showIntegrationCode)} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
             <ExternalLink className="w-4 h-4" />
             Integration Code
           </button>
@@ -169,9 +126,7 @@ const Domain = () => {
 
         {/* Status Message */}
         {message.text && (
-          <div className={`mx-6 mt-4 p-3 rounded-lg flex items-center gap-2 ${
-            message.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'
-          }`}>
+          <div className={`mx-6 mt-4 p-3 rounded-lg flex items-center gap-2 ${message.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
             {message.type === 'success' ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
             {message.text}
           </div>
@@ -203,11 +158,7 @@ const Domain = () => {
               className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
               onKeyPress={(e) => e.key === 'Enter' && addDomain()}
             />
-            <button
-              onClick={addDomain}
-              disabled={!newDomain.trim() || isAdding}
-              className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300"
-            >
+            <button onClick={addDomain} disabled={!newDomain.trim() || isAdding} className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300">
               {isAdding ? 'Adding...' : <><Plus className="w-4 h-4" /> Add Domain</>}
             </button>
           </div>
@@ -236,14 +187,9 @@ const Domain = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
-                      <Check className="w-3 h-3" />
-                      Active
+                      <Check className="w-3 h-3" /> Active
                     </span>
-                    <button
-                      onClick={() => deleteDomain(domain.domain)}
-                      className="text-red-600 hover:text-red-800 p-1 rounded border border-red-200"
-                      title="Delete domain"
-                    >
+                    <button onClick={() => deleteDomain(domain.domain)} className="text-red-600 hover:text-red-800 p-1 rounded border border-red-200" title="Delete domain">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -251,12 +197,6 @@ const Domain = () => {
               ))}
             </div>
           )}
-        </div>
-
-        {/* Client Info */}
-        <div className="px-6 py-3 bg-gray-100 border-t border-gray-200 text-xs text-gray-600">
-          <strong>Client ID:</strong> {clientCredentials.clientId} | 
-          <strong> API Key:</strong> {clientCredentials.chatbotKey?.slice(0, 8)}...
         </div>
       </div>
     </div>

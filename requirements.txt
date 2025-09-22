@@ -10,3 +10,6 @@ python-dotenv
 groq
 requests
 bcrypt
+pyjwt
+passlib[bcrypt]
+python-multipart

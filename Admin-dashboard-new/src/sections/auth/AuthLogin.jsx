@@ -34,21 +34,14 @@ export default function AuthLogin({ className }) {
 
       const data = await res.json();
 
-      if (data.success) {
-        const { client_id, chatbot_key } = data;
+      if (data.success && data.token) {
+        // Clear old token
+        localStorage.removeItem('jwt_token');
+        sessionStorage.removeItem('jwt_token');
 
-        // Clear old credentials
-        Object.keys(localStorage).forEach(key => {
-          if (key.startsWith('clientId_') || key.startsWith('chatbotKey_')) localStorage.removeItem(key);
-        });
-        Object.keys(sessionStorage).forEach(key => {
-          if (key.startsWith('clientId_') || key.startsWith('chatbotKey_')) sessionStorage.removeItem(key);
-        });
-
-        // Store credentials per client
+        // Store JWT token
         const storage = remember ? localStorage : sessionStorage;
-        storage.setItem(`clientId_${client_id}`, client_id);
-        storage.setItem(`chatbotKey_${client_id}`, chatbot_key);
+        storage.setItem('jwt_token', data.token);
 
         setLog('✅ Login successful! Redirecting...');
         setTimeout(() => {

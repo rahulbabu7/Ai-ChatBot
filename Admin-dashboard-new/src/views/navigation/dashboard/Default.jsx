@@ -1,5 +1,4 @@
-// react
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 
 // react-bootstrap
@@ -9,32 +8,27 @@ import Card from "react-bootstrap/Card";
 import Spinner from "react-bootstrap/Spinner";
 import ListGroup from "react-bootstrap/ListGroup";
 
-// Utility to get latest client from storage
-const getLatestClientId = () => {
-  const localKeys = Object.keys(localStorage).filter((k) => k.startsWith("clientId_"));
-  const sessionKeys = Object.keys(sessionStorage).filter((k) => k.startsWith("clientId_"));
-
-  const allClientIds = [...localKeys, ...sessionKeys].map(
-    (key) => localStorage.getItem(key) || sessionStorage.getItem(key)
-  );
-
-  return allClientIds.length ? allClientIds[allClientIds.length - 1] : "";
-};
-
 export default function DefaultPage() {
-  const [selectedClient, setSelectedClient] = useState(getLatestClientId());
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState("");
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(false);
   const [visitorCount, setVisitorCount] = useState(0);
 
-  // fetch sessions on client select
+  const chatContainerRef = useRef(null);
+
+  // Get JWT token from storage
+  const token =
+    localStorage.getItem("jwt_token") || sessionStorage.getItem("jwt_token");
+
+  // Fetch sessions on mount
   useEffect(() => {
-    if (!selectedClient) return;
+    if (!token) return;
 
     axios
-      .get(`http://localhost:8000/client/${selectedClient}/sessions`)
+      .get(`http://localhost:8000/client/sessions/me`, {
+        headers: { "x-token": token },
+      })
       .then((res) => {
         setSessions(res.data.sessions || []);
         setSelectedSession("");
@@ -45,21 +39,37 @@ export default function DefaultPage() {
         setSessions([]);
         setVisitorCount(0);
       });
-  }, [selectedClient]);
+  }, [token]);
 
-  // fetch chats on session select
+  // Fetch chats whenever a session is selected
   useEffect(() => {
-    if (!selectedClient || !selectedSession) return;
+    if (!token || !selectedSession) return;
 
     setLoading(true);
     axios
       .get(
-        `http://localhost:8000/client/${selectedClient}/chats?session_id=${selectedSession}`
+        `http://localhost:8000/client/chats/me?session_id=${selectedSession}`, // ✅ match backend
+        { headers: { "x-token": token } }
       )
       .then((res) => setChats(res.data.chats || []))
       .catch(() => setChats([]))
       .finally(() => setLoading(false));
-  }, [selectedClient, selectedSession]);
+  }, [token, selectedSession]);
+
+  // Scroll chat to bottom when chats update
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [chats]);
+
+  if (!token) {
+    return (
+      <p className="text-center mt-5">
+        ❌ You must log in to view this page.
+      </p>
+    );
+  }
 
   return (
     <Row>
@@ -70,7 +80,7 @@ export default function DefaultPage() {
             <h5 className="mb-0">Active Sessions</h5>
           </Card.Header>
           <Card.Body>
-            {selectedClient && sessions.length > 0 ? (
+            {sessions.length > 0 ? (
               <ListGroup>
                 {sessions.map((s) => (
                   <ListGroup.Item
@@ -87,22 +97,20 @@ export default function DefaultPage() {
               <p className="text-muted">No sessions available</p>
             )}
 
-            {selectedClient && (
-              <Card
-                className={`mt-3 text-center shadow-sm border-0 ${
-                  visitorCount > 5
-                    ? "bg-success text-white"
-                    : visitorCount > 0
-                    ? "bg-warning text-dark"
-                    : "bg-danger text-white"
-                }`}
-              >
-                <Card.Body>
-                  <h6 className="mb-1">Active Sessions</h6>
-                  <h2 className="fw-bold mb-0">{visitorCount}</h2>
-                </Card.Body>
-              </Card>
-            )}
+            <Card
+              className={`mt-3 text-center shadow-sm border-0 ${
+                visitorCount > 5
+                  ? "bg-success text-white"
+                  : visitorCount > 0
+                  ? "bg-warning text-dark"
+                  : "bg-danger text-white"
+              }`}
+            >
+              <Card.Body>
+                <h6 className="mb-1">Active Sessions</h6>
+                <h2 className="fw-bold mb-0">{visitorCount}</h2>
+              </Card.Body>
+            </Card>
           </Card.Body>
         </Card>
       </Col>
@@ -113,7 +121,11 @@ export default function DefaultPage() {
           <Card.Header>
             <h5 className="mb-0">Chats</h5>
           </Card.Header>
-          <Card.Body>
+          <Card.Body
+            ref={chatContainerRef}
+            className="chat-messages p-2"
+            style={{ maxHeight: "70vh", overflowY: "auto" }}
+          >
             {loading ? (
               <div className="d-flex justify-content-center align-items-center h-100">
                 <Spinner animation="border" />
@@ -122,27 +134,22 @@ export default function DefaultPage() {
             ) : chats.length === 0 ? (
               <p className="text-muted">Select a session to view chats</p>
             ) : (
-              <div
-                className="chat-messages p-2"
-                style={{ maxHeight: "70vh", overflowY: "auto" }}
-              >
-                {chats.map((chat, i) => (
-                  <div
-                    key={i}
-                    className={`chat-message mb-3 p-2 rounded ${
-                      chat.role === "user"
-                        ? "bg-primary text-white text-end"
-                        : "bg-light border text-start"
-                    }`}
-                  >
-                    <div>{chat.message}</div>
-                    <div className="small text-muted mt-1">
-                      [{chat.role}] {new Date(chat.created_at).toLocaleString()} | UA:{" "}
-                      {chat.user_agent}
-                    </div>
+              chats.map((chat, i) => (
+                <div
+                  key={i}
+                  className={`chat-message mb-3 p-2 rounded ${
+                    chat.role === "user"
+                      ? "bg-primary text-white text-end"
+                      : "bg-light border text-start"
+                  }`}
+                >
+                  <div>{chat.message}</div>
+                  <div className="small text-muted mt-1">
+                    [{chat.role}] {new Date(chat.created_at).toLocaleString()} | UA:{" "}
+                    {chat.user_agent} | Country: {chat.country_code || "Unknown"}
                   </div>
-                ))}
-              </div>
+                </div>
+              ))
             )}
           </Card.Body>
         </Card>

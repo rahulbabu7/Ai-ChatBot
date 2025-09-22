@@ -27,7 +27,7 @@ const PagesRoutes = {
       element: <DashboardLayout />,
       children: [
         { path: 'dashboard-admin', element: <AdminDashboard /> },
-        { path: 'client/:clientId', element: <ClientDashboard /> }, // dynamic route
+        { path: 'dashboard', element: <ClientDashboard /> }, // ✅ fixed route
         { path: 'domain', element: <DomainIntegration /> }
       ]
     }
