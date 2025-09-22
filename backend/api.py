@@ -7,7 +7,7 @@ import sqlite3
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Header
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from db import get_db
+from db import get_db,remove_domain
 
 # Add Chatbot/llm to path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -381,7 +381,27 @@ def register_client_domains(client_id: str, domains: list[str], x_chatbot_key: s
         "message": f"Successfully registered {len(registered_domains)} domain(s)"
     }
 
+@app.delete("/client/{client_id}/domains/{domain}")
+def delete_client_domain(client_id: str, domain: str, x_chatbot_key: str = Header(None)):
+    """
+    Delete a domain for a client
+    """
+    conn = get_db()
+    cursor = conn.cursor()
 
+    # Verify client + key
+    cursor.execute("SELECT * FROM users WHERE client_id=? AND chatbot_key=?", (client_id, x_chatbot_key))
+    client = cursor.fetchone()
+    conn.close()
+
+    if not client:
+        raise HTTPException(status_code=403, detail="Invalid client or key")
+
+    success = remove_domain(domain, client_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Domain '{domain}' not found or could not be deleted")
+
+    return {"success": True, "message": f"Domain '{domain}' deleted successfully"}
 
 
 # ----------------------------

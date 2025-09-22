@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Globe, Plus, Trash2, Check, AlertCircle, Copy, ExternalLink } from 'lucide-react';
+import { Globe, Plus, Check, AlertCircle, Copy, ExternalLink, Trash2 } from 'lucide-react';
 
 const Domain = () => {
   const [domains, setDomains] = useState([]);
@@ -8,77 +8,54 @@ const Domain = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [showIntegrationCode, setShowIntegrationCode] = useState(false);
-  const [clientCredentials, setClientCredentials] = useState({
-    clientId: '',
-    chatbotKey: ''
-  });
+  const [clientCredentials, setClientCredentials] = useState({ clientId: '', chatbotKey: '' });
+
+  // Get latest clientId from storage
+  const getLatestClientCredentials = () => {
+    const localClientKeys = Object.keys(localStorage).filter(k => k.startsWith('clientId_'));
+    const sessionClientKeys = Object.keys(sessionStorage).filter(k => k.startsWith('clientId_'));
+
+    const allClientIds = [...localClientKeys, ...sessionClientKeys].map(key => {
+      return localStorage.getItem(key) || sessionStorage.getItem(key);
+    });
+
+    if (allClientIds.length === 0) return null;
+
+    const latestClientId = allClientIds[allClientIds.length - 1];
+    const chatbotKey = localStorage.getItem(`chatbotKey_${latestClientId}`) || sessionStorage.getItem(`chatbotKey_${latestClientId}`);
+
+    return { clientId: latestClientId, chatbotKey: chatbotKey || '' };
+  };
 
   useEffect(() => {
-    // Enhanced debugging
-    console.log('Domain component useEffect triggered');
-    console.log('All localStorage keys:', Object.keys(localStorage));
-    console.log('All sessionStorage keys:', Object.keys(sessionStorage));
-    
-    // Get client credentials from localStorage or sessionStorage
-    // Check for both camelCase and snake_case versions
-    const clientId = localStorage.getItem('clientId') || sessionStorage.getItem('clientId') ||
-                     localStorage.getItem('client_id') || sessionStorage.getItem('client_id');
-    const chatbotKey = localStorage.getItem('chatbotKey') || sessionStorage.getItem('chatbotKey') ||
-                       localStorage.getItem('chatbot_key') || sessionStorage.getItem('chatbot_key');
-    
-    console.log('Domain component - stored credentials:', { 
-      clientId: clientId || 'NOT FOUND', 
-      chatbotKey: chatbotKey ? `${chatbotKey.slice(0, 8)}...` : 'NOT FOUND',
-      hasClientId: !!clientId,
-      hasChatbotKey: !!chatbotKey
-    });
-    
-    if (clientId && chatbotKey) {
-      console.log('Credentials found, setting state and fetching domains');
-      setClientCredentials({ clientId, chatbotKey });
-      fetchClientDomains(clientId, chatbotKey);
-    } else if (clientId && !chatbotKey) {
-      console.log('Only clientId found, missing chatbotKey');
-      setMessage({ 
-        type: 'error', 
-        text: 'Missing authentication key. Please login again.' 
-      });
+    const credentials = getLatestClientCredentials();
+
+    if (!credentials?.clientId) {
+      setMessage({ type: 'error', text: 'Please login first to manage your domains.' });
       setIsLoading(false);
-    } else {
-      console.log('Missing credentials - clientId:', !!clientId, 'chatbotKey:', !!chatbotKey);
-      setMessage({ 
-        type: 'error', 
-        text: 'Please login first to manage your domains. No stored credentials found.' 
-      });
-      setIsLoading(false);
+      return;
     }
+
+    if (!credentials.chatbotKey) {
+      setMessage({ type: 'error', text: 'Missing authentication key. Please login again.' });
+      setIsLoading(false);
+      return;
+    }
+
+    setClientCredentials(credentials);
+    fetchClientDomains(credentials.clientId, credentials.chatbotKey);
   }, []);
 
   const fetchClientDomains = async (clientId, chatbotKey) => {
-    console.log('fetchClientDomains called with:', { clientId, hasKey: !!chatbotKey });
-    
+    setIsLoading(true);
     try {
-      const url = `http://localhost:8000/client/${clientId}/domains`;
-      console.log('Fetching from URL:', url);
-      
-      const response = await fetch(url, {
+      const res = await fetch(`http://localhost:8000/client/${clientId}/domains`, {
         headers: { 'x-chatbot-key': chatbotKey }
       });
-      
-      console.log('Response status:', response.status);
-      console.log('Response ok:', response.ok);
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Received data:', data);
-        setDomains(data.domains || []);
-      } else {
-        const errorText = await response.text();
-        console.error('Response error:', errorText);
-        throw new Error(`Failed to fetch domains: ${response.status}`);
-      }
+      if (!res.ok) throw new Error('Failed to fetch domains');
+      const data = await res.json();
+      setDomains(data.domains || []);
     } catch (error) {
-      console.error('Failed to fetch domains:', error);
       setMessage({ type: 'error', text: 'Failed to load your domains.' });
     } finally {
       setIsLoading(false);
@@ -86,19 +63,10 @@ const Domain = () => {
   };
 
   const addDomain = async () => {
-    if (!newDomain.trim()) {
-      console.log('No domain entered');
-      return;
-    }
-
-    console.log('Adding domain:', newDomain.trim());
+    if (!newDomain.trim()) return;
     setIsAdding(true);
-    
     try {
-      const url = `http://localhost:8000/client/register-my-domains/${clientCredentials.clientId}`;
-      console.log('POST to URL:', url);
-      
-      const response = await fetch(url, {
+      const res = await fetch(`http://localhost:8000/client/register-my-domains/${clientCredentials.clientId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -107,11 +75,8 @@ const Domain = () => {
         body: JSON.stringify([newDomain.trim()])
       });
 
-      console.log('Add domain response status:', response.status);
-      const data = await response.json();
-      console.log('Add domain response data:', data);
-      
-      if (response.ok && data.success) {
+      const data = await res.json();
+      if (res.ok && data.success) {
         setMessage({ type: 'success', text: `Domain "${data.registered_domains[0]}" registered successfully!` });
         setNewDomain('');
         fetchClientDomains(clientCredentials.clientId, clientCredentials.chatbotKey);
@@ -119,65 +84,57 @@ const Domain = () => {
         setMessage({ type: 'error', text: data.message || 'Failed to register domain' });
       }
     } catch (error) {
-      console.error('Add domain error:', error);
       setMessage({ type: 'error', text: 'Network error. Please try again.' });
     } finally {
       setIsAdding(false);
+      setTimeout(() => setMessage({ type: '', text: '' }), 5000);
     }
+  };
 
-    setTimeout(() => setMessage({ type: '', text: '' }), 5000);
+  // Delete domain
+  const deleteDomain = async (domainName) => {
+    if (!window.confirm(`Are you sure you want to delete the domain "${domainName}"?`)) return;
+
+    try {
+      const res = await fetch(`http://localhost:8000/client/${clientCredentials.clientId}/domains/${domainName}`, {
+        method: 'DELETE',
+        headers: { 'x-chatbot-key': clientCredentials.chatbotKey }
+      });
+
+      if (!res.ok) throw new Error('Failed to delete domain');
+
+      setMessage({ type: 'success', text: `Domain "${domainName}" deleted successfully!` });
+      fetchClientDomains(clientCredentials.clientId, clientCredentials.chatbotKey);
+    } catch (error) {
+      setMessage({ type: 'error', text: `Failed to delete domain "${domainName}".` });
+    } finally {
+      setTimeout(() => setMessage({ type: '', text: '' }), 5000);
+    }
   };
 
   const copyToClipboard = async (text) => {
     try {
       await navigator.clipboard.writeText(text);
       setMessage({ type: 'success', text: 'Copied to clipboard!' });
-      console.log('Text copied to clipboard');
-    } catch (error) {
-      console.error('Failed to copy to clipboard:', error);
+    } catch {
       setMessage({ type: 'error', text: 'Failed to copy to clipboard' });
+    } finally {
+      setTimeout(() => setMessage({ type: '', text: '' }), 2000);
     }
-    setTimeout(() => setMessage({ type: '', text: '' }), 2000);
   };
 
-  const integrationCode = `<!-- Add this to your website's HTML -->
+  const integrationCode = `<!-- Add this to your website -->
 <div id="chatbot-container"></div>
 <script>
-  // Create chatbot iframe
   const iframe = document.createElement('iframe');
-  iframe.src = 'http://localhost:3000/chatbot'; // Your chatbot URL
+  iframe.src = 'http://localhost:3000/chatbot';
   iframe.style.cssText = 'position:fixed;bottom:20px;right:20px;width:400px;height:600px;border:none;z-index:1000;';
   document.body.appendChild(iframe);
 </script>`;
 
-  // Debug render
-  console.log('Domain component rendering with state:', {
-    isLoading,
-    hasClientId: !!clientCredentials.clientId,
-    domainsCount: domains.length,
-    messageType: message.type
-  });
+  if (isLoading) return <div className="flex items-center justify-center min-h-screen">Loading domains...</div>;
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-600">Loading your domains...</div>
-      </div>
-    );
-  }
-
-  // Test credentials function for debugging
-  const setTestCredentials = () => {
-    const testClientId = 'test-client-id';
-    const testChatbotKey = 'test-chatbot-key-12345';
-    localStorage.setItem('clientId', testClientId);
-    localStorage.setItem('chatbotKey', testChatbotKey);
-    setClientCredentials({ clientId: testClientId, chatbotKey: testChatbotKey });
-    console.log('Test credentials set');
-    window.location.reload(); // Reload to test
-  };
-
-  if (!clientCredentials.clientId) {
+  if (!clientCredentials.clientId)
     return (
       <div className="max-w-2xl mx-auto p-6">
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -185,112 +142,73 @@ const Domain = () => {
             <AlertCircle className="w-5 h-5 text-red-600" />
             <p className="text-red-800">Please login first to manage your domains.</p>
           </div>
-          <div className="mt-4 space-y-2">
-            <p className="text-sm text-red-700">Debug Info:</p>
-            <p className="text-xs text-red-600">No credentials found in localStorage or sessionStorage</p>
-            <button 
-              onClick={setTestCredentials}
-              className="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600"
-            >
-              Set Test Credentials (Debug)
-            </button>
-          </div>
         </div>
       </div>
     );
-  }
 
   return (
     <div className="max-w-4xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-lg">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Globe className="w-6 h-6 text-blue-600" />
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">My Domains</h2>
-                <p className="text-sm text-gray-600">Manage domains where your chatbot will appear</p>
-              </div>
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Globe className="w-6 h-6 text-blue-600" />
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">My Domains</h2>
+              <p className="text-sm text-gray-600">Manage domains where your chatbot will appear</p>
             </div>
-            <button
-              onClick={() => setShowIntegrationCode(!showIntegrationCode)}
-              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
-            >
-              <ExternalLink className="w-4 h-4" />
-              Integration Code
-            </button>
           </div>
+          <button
+            onClick={() => setShowIntegrationCode(!showIntegrationCode)}
+            className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
+          >
+            <ExternalLink className="w-4 h-4" />
+            Integration Code
+          </button>
         </div>
 
         {/* Status Message */}
         {message.text && (
           <div className={`mx-6 mt-4 p-3 rounded-lg flex items-center gap-2 ${
-            message.type === 'success' 
-              ? 'bg-green-50 text-green-800 border border-green-200' 
-              : 'bg-red-50 text-red-800 border border-red-200'
+            message.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'
           }`}>
-            {message.type === 'success' ? (
-              <Check className="w-4 h-4" />
-            ) : (
-              <AlertCircle className="w-4 h-4" />
-            )}
+            {message.type === 'success' ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
             {message.text}
           </div>
         )}
 
-        {/* Integration Code Section */}
+        {/* Integration Code */}
         {showIntegrationCode && (
           <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
             <h3 className="text-lg font-medium text-gray-900 mb-3">Integration Code</h3>
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-sm font-medium text-gray-700">Add this to your website</label>
-                <button
-                  onClick={() => copyToClipboard(integrationCode)}
-                  className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
-                >
-                  <Copy className="w-3 h-3" />
-                  Copy
-                </button>
-              </div>
-              <pre className="bg-gray-900 text-green-400 p-3 rounded text-xs overflow-x-auto">
-                {integrationCode}
-              </pre>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-gray-700">Add this to your website</label>
+              <button onClick={() => copyToClipboard(integrationCode)} className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1">
+                <Copy className="w-3 h-3" /> Copy
+              </button>
             </div>
+            <pre className="bg-gray-900 text-green-400 p-3 rounded text-xs overflow-x-auto">{integrationCode}</pre>
           </div>
         )}
 
-        {/* Add Domain Section */}
+        {/* Add Domain */}
         <div className="px-6 py-4 border-b border-gray-200">
           <h3 className="text-lg font-medium text-gray-900 mb-3">Add New Domain</h3>
           <div className="flex gap-3">
-            <div className="flex-1">
-              <input
-                type="text"
-                value={newDomain}
-                onChange={(e) => setNewDomain(e.target.value)}
-                placeholder="yourdomain.com"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                onKeyPress={(e) => e.key === 'Enter' && addDomain()}
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Enter your domain without http:// or www. (e.g., yourdomain.com)
-              </p>
-            </div>
+            <input
+              type="text"
+              value={newDomain}
+              onChange={(e) => setNewDomain(e.target.value)}
+              placeholder="yourdomain.com"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
+              onKeyPress={(e) => e.key === 'Enter' && addDomain()}
+            />
             <button
               onClick={addDomain}
               disabled={!newDomain.trim() || isAdding}
-              className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300"
             >
-              {isAdding ? (
-                'Adding...'
-              ) : (
-                <>
-                  <Plus className="w-4 h-4" />
-                  Add Domain
-                </>
-              )}
+              {isAdding ? 'Adding...' : <><Plus className="w-4 h-4" /> Add Domain</>}
             </button>
           </div>
         </div>
@@ -298,47 +216,41 @@ const Domain = () => {
         {/* Domains List */}
         <div className="px-6 py-4">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Registered Domains</h3>
-          
           {domains.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <Globe className="w-12 h-12 mx-auto mb-3 text-gray-300" />
               <p className="text-lg font-medium">No domains registered yet</p>
-              <p className="text-sm">Add your first domain to enable automatic chatbot integration</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {domains.map((domain, index) => (
-                <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border">
+              {domains.map((domain, i) => (
+                <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
                       <Globe className="w-5 h-5 text-blue-600" />
                     </div>
                     <div>
                       <h4 className="font-medium text-gray-900">{domain.domain}</h4>
-                      <p className="text-sm text-gray-500">
-                        Registered on {new Date(domain.created_at).toLocaleDateString()}
-                      </p>
+                      <p className="text-sm text-gray-500">Registered on {new Date(domain.created_at).toLocaleDateString()}</p>
                     </div>
                   </div>
-                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
-                    <Check className="w-3 h-3" />
-                    Active
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                      <Check className="w-3 h-3" />
+                      Active
+                    </span>
+                    <button
+                      onClick={() => deleteDomain(domain.domain)}
+                      className="text-red-600 hover:text-red-800 p-1 rounded border border-red-200"
+                      title="Delete domain"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           )}
-        </div>
-
-        {/* Instructions */}
-        <div className="px-6 py-4 bg-blue-50 border-t border-gray-200">
-          <h4 className="font-medium text-blue-900 mb-2">📋 How it works:</h4>
-          <ol className="text-sm text-blue-800 space-y-1">
-            <li>1. Add your website domain above</li>
-            <li>2. Copy the integration code and add it to your website</li>
-            <li>3. The chatbot will automatically appear on your domain</li>
-            <li>4. Visitors will see your personalized chatbot assistant</li>
-          </ol>
         </div>
 
         {/* Client Info */}

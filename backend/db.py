@@ -94,6 +94,27 @@ def register_domain(domain, client_id):
     finally:
         conn.close()
 
+def remove_domain(domain: str, client_id: str) -> bool:
+    """
+    Remove a domain mapping for a client.
+    Returns True if a row was deleted, False otherwise.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM domain_mappings WHERE domain=? AND client_id=?",
+            (domain.lower().strip(), client_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
 def get_client_by_domain(domain):
     """Get client information by domain"""
     conn = get_db()

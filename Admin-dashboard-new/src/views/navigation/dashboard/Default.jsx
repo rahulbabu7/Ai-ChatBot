@@ -9,86 +9,87 @@ import Card from "react-bootstrap/Card";
 import Spinner from "react-bootstrap/Spinner";
 import ListGroup from "react-bootstrap/ListGroup";
 
+// Utility to get latest client from storage
+const getLatestClientId = () => {
+  const localKeys = Object.keys(localStorage).filter((k) => k.startsWith("clientId_"));
+  const sessionKeys = Object.keys(sessionStorage).filter((k) => k.startsWith("clientId_"));
+
+  const allClientIds = [...localKeys, ...sessionKeys].map(
+    (key) => localStorage.getItem(key) || sessionStorage.getItem(key)
+  );
+
+  return allClientIds.length ? allClientIds[allClientIds.length - 1] : "";
+};
+
 export default function DefaultPage() {
-  const [clients, setClients] = useState([]);
-  const [selectedClient, setSelectedClient] = useState("");
+  const [selectedClient, setSelectedClient] = useState(getLatestClientId());
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState("");
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(false);
   const [visitorCount, setVisitorCount] = useState(0);
 
-  // fetch clients
-  useEffect(() => {
-    axios
-      .get("http://localhost:8000/admin/clients")
-      .then((res) => setClients(res.data.clients || []))
-      .catch(() => setClients([]));
-  }, []);
-
   // fetch sessions on client select
   useEffect(() => {
-    if (selectedClient) {
-      axios
-        .get(`http://localhost:8000/client/${selectedClient}/sessions`)
-        .then((res) => {
-          setSessions(res.data.sessions || []);
-          setSelectedSession("");
-          setChats([]);
-          setVisitorCount(res.data.sessions?.length || 0);
-        })
-        .catch(() => {
-          setSessions([]);
-          setVisitorCount(0);
-        });
-    } else {
-      setVisitorCount(0);
-      setSessions([]);
-      setChats([]);
-      setSelectedSession("");
-    }
+    if (!selectedClient) return;
+
+    axios
+      .get(`http://localhost:8000/client/${selectedClient}/sessions`)
+      .then((res) => {
+        setSessions(res.data.sessions || []);
+        setSelectedSession("");
+        setChats([]);
+        setVisitorCount(res.data.sessions?.length || 0);
+      })
+      .catch(() => {
+        setSessions([]);
+        setVisitorCount(0);
+      });
   }, [selectedClient]);
 
   // fetch chats on session select
   useEffect(() => {
-    if (selectedClient && selectedSession) {
-      setLoading(true);
-      axios
-        .get(
-          `http://localhost:8000/client/${selectedClient}/chats?session_id=${selectedSession}`
-        )
-        .then((res) => setChats(res.data.chats || []))
-        .catch(() => setChats([]))
-        .finally(() => setLoading(false));
-    }
+    if (!selectedClient || !selectedSession) return;
+
+    setLoading(true);
+    axios
+      .get(
+        `http://localhost:8000/client/${selectedClient}/chats?session_id=${selectedSession}`
+      )
+      .then((res) => setChats(res.data.chats || []))
+      .catch(() => setChats([]))
+      .finally(() => setLoading(false));
   }, [selectedClient, selectedSession]);
 
   return (
     <Row>
-      {/* Sidebar (Clients + sessions) */}
+      {/* Sidebar (Sessions) */}
       <Col md={4} xl={3}>
         <Card className="shadow-sm h-100">
           <Card.Header>
-            <h5 className="mb-0">Clients</h5>
+            <h5 className="mb-0">Active Sessions</h5>
           </Card.Header>
           <Card.Body>
-            <select
-              id="clientSelect"
-              className="form-select mb-3"
-              value={selectedClient}
-              onChange={(e) => setSelectedClient(e.target.value)}
-            >
-              <option value="">-- Choose Client --</option>
-              {clients.map((c) => (
-                <option key={c.client_id} value={c.client_id}>
-                  {c.name} ({c.username})
-                </option>
-              ))}
-            </select>
+            {selectedClient && sessions.length > 0 ? (
+              <ListGroup>
+                {sessions.map((s) => (
+                  <ListGroup.Item
+                    key={s}
+                    action
+                    active={selectedSession === s}
+                    onClick={() => setSelectedSession(s)}
+                  >
+                    Session {s}
+                  </ListGroup.Item>
+                ))}
+              </ListGroup>
+            ) : (
+              <p className="text-muted">No sessions available</p>
+            )}
 
             {selectedClient && (
               <Card
-                className={`mb-3 text-center shadow-sm border-0 ${
+                className={`mt-3 text-center shadow-sm border-0 ${
                   visitorCount > 5
                     ? "bg-success text-white"
                     : visitorCount > 0
@@ -101,24 +102,6 @@ export default function DefaultPage() {
                   <h2 className="fw-bold mb-0">{visitorCount}</h2>
                 </Card.Body>
               </Card>
-            )}
-
-            {sessions.length > 0 && (
-              <>
-                <h6 className="mb-2">Chat Sessions</h6>
-                <ListGroup>
-                  {sessions.map((s) => (
-                    <ListGroup.Item
-                      key={s}
-                      action
-                      active={selectedSession === s}
-                      onClick={() => setSelectedSession(s)}
-                    >
-                      Session {s}
-                    </ListGroup.Item>
-                  ))}
-                </ListGroup>
-              </>
             )}
           </Card.Body>
         </Card>
@@ -154,8 +137,8 @@ export default function DefaultPage() {
                   >
                     <div>{chat.message}</div>
                     <div className="small text-muted mt-1">
-                      [{chat.role}] {new Date(chat.created_at).toLocaleString()}{" "}
-                      | UA: {chat.user_agent}
+                      [{chat.role}] {new Date(chat.created_at).toLocaleString()} | UA:{" "}
+                      {chat.user_agent}
                     </div>
                   </div>
                 ))}

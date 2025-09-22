@@ -1,14 +1,12 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import "assets/scss/style.scss"; // global SCSS
 
 const API = "http://localhost:8000";
 
 const Dashboard = () => {
-  const clientId =
-    localStorage.getItem("client_id") || sessionStorage.getItem("client_id");
-
-  const navigate = useNavigate(); // for navigation
+  const { clientId } = useParams();   // ✅ use route param
+  const navigate = useNavigate();
 
   const [clientName, setClientName] = useState("");
   const [allowedDomain, setDomain] = useState("");
@@ -27,6 +25,7 @@ const Dashboard = () => {
         const res = await fetch(`${API}/client/${clientId}`);
         if (!res.ok) throw new Error("Failed to fetch client");
         const data = await res.json();
+        console.log(data)
         setClientName(data.name || clientId);
       } catch (e) {
         console.error(e);
@@ -50,8 +49,13 @@ const Dashboard = () => {
     }
   };
 
-  const triggerCrawl = () =>
-    call(`/client/crawl`, {
+  const triggerCrawlAndEmbed = () => {
+    if (!allowedDomain || !startUrl) {
+      alert("Please fill in the allowed domain and start URL.");
+      return;
+    }
+
+    call(`/client/crawl-and-embed`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -60,9 +64,7 @@ const Dashboard = () => {
         start_url: startUrl,
       }),
     });
-
-  const runEmbeddings = () =>
-    call(`/client/embed/${clientId}`, { method: "POST" });
+  };
 
   const uploadQA = () => {
     if (!qaFile) {
@@ -81,11 +83,10 @@ const Dashboard = () => {
 
   return (
     <div className="container mt-4">
-      {/* Back to Admin Dashboard */}
       <div className="mb-3">
         <button
           className="btn btn-secondary"
-          onClick={() => navigate("/dashboard-admin")} // navigate to admin dashboard
+          onClick={() => navigate("/dashboard-admin")}
         >
           ← Back to Admin Dashboard
         </button>
@@ -118,11 +119,12 @@ const Dashboard = () => {
         </div>
 
         <div className="d-flex flex-wrap gap-2 mb-3">
-          <button className="btn btn-primary" disabled={busy} onClick={triggerCrawl}>
-            🚀 Crawl Website
-          </button>
-          <button className="btn btn-success" disabled={busy} onClick={runEmbeddings}>
-            ⚡ Run Embeddings
+          <button
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={triggerCrawlAndEmbed}
+          >
+            🚀 Start Crawl and Embedding
           </button>
         </div>
 
@@ -137,7 +139,11 @@ const Dashboard = () => {
             className="form-control mb-2"
             onChange={(e) => setQaFile(e.target.files?.[0] || null)}
           />
-          <button className="btn btn-info" disabled={busy || !qaFile} onClick={uploadQA}>
+          <button
+            className="btn btn-info"
+            disabled={busy || !qaFile}
+            onClick={uploadQA}
+          >
             📥 Upload Q&A
           </button>
         </div>
