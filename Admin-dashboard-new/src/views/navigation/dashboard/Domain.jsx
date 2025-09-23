@@ -41,7 +41,7 @@ const Domain = () => {
     if (!newDomain.trim()) return;
     setIsAdding(true);
     try {
-      const res = await fetch('http://localhost:8000/client/me/register-domains', {
+      const res = await fetch('http://localhost:8000/client/register-my-domains/me', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-token': token },
         body: JSON.stringify([newDomain.trim()])
