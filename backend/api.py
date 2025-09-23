@@ -110,30 +110,30 @@ async def crawl_website_async(client_id: str, allowed_domain: str, start_url: st
     """Asynchronous website crawling"""
     try:
         update_task_status(task_id, "running", "Starting website crawl...", 10)
-        
+
         client_dir = os.path.join(CLIENTS_DIR, client_id)
         os.makedirs(client_dir, exist_ok=True)
         output_file = os.path.join(client_dir, "website_content.json")
-        
+
         cmd = [
             "scrapy", "crawl", "website_scrap",
             "-a", f"allowed_domain={allowed_domain}",
             "-a", f"start_url={start_url}",
             "-a", f"output_file={output_file}"
         ]
-        
+
         update_task_status(task_id, "running", "Crawling website...", 50)
-        
+
         returncode, stdout, stderr = await run_subprocess_async(cmd, CRAWLER_DIR)
-        
+
         if returncode != 0:
             raise Exception(f"Crawling failed: {stderr}")
-            
+
         update_task_status(task_id, "completed", "Website crawling completed successfully", 100, {
             "output_file": output_file,
             "crawled_pages": "Check logs for details"
         })
-        
+
     except Exception as e:
         update_task_status(task_id, "failed", f"Crawling failed: {str(e)}", 0)
 
@@ -141,22 +141,22 @@ async def run_embeddings_async(client_id: str, task_id: str):
     """Asynchronous embeddings processing"""
     try:
         update_task_status(task_id, "running", "Starting embeddings generation...", 10)
-        
+
         script_path = os.path.abspath(os.path.join(BASE_DIR, "../Chatbot/processing/embed_pipeline.py"))
         cmd = [sys.executable, script_path, client_id]
-        
+
         update_task_status(task_id, "running", "Processing embeddings...", 50)
-        
+
         returncode, stdout, stderr = await run_subprocess_async(cmd)
-        
+
         if returncode != 0:
             raise Exception(f"Embeddings failed: {stderr}")
-            
+
         update_task_status(task_id, "completed", "Embeddings generated successfully", 100, {
             "client_id": client_id,
             "embeddings": "Generated and stored"
         })
-        
+
     except Exception as e:
         update_task_status(task_id, "failed", f"Embeddings failed: {str(e)}", 0)
 
@@ -164,20 +164,20 @@ async def crawl_and_embed_async(client_id: str, allowed_domain: str, start_url: 
     """Combined crawl and embed operation"""
     try:
         update_task_status(task_id, "running", "Starting crawl and embed pipeline...", 5)
-        
+
         # Step 1: Crawl
         await crawl_website_async(client_id, allowed_domain, start_url, f"{task_id}_crawl")
         update_task_status(task_id, "running", "Crawling completed, starting embeddings...", 60)
-        
+
         # Step 2: Embeddings
         await run_embeddings_async(client_id, f"{task_id}_embed")
-        
+
         update_task_status(task_id, "completed", "Crawl and embed pipeline completed successfully", 100, {
             "client_id": client_id,
             "domain": allowed_domain,
             "start_url": start_url
         })
-        
+
     except Exception as e:
         update_task_status(task_id, "failed", f"Pipeline failed: {str(e)}", 0)
 
@@ -240,24 +240,24 @@ async def chat(req: ChatRequest, client_id: str = Depends(get_client_from_header
     session_id = req.session_id or str(uuid.uuid4())
     user_agent = request.headers.get("user-agent", "unknown") if request else "unknown"
     user_ip = request.client.host if request else "0.0.0.0"
-    
+
     # Async location lookup
     try:
         async with asyncio.timeout(3):
             loop = asyncio.get_event_loop()
             loc_resp = await loop.run_in_executor(
-                io_executor, 
+                io_executor,
                 lambda: requests.get(f"https://ipinfo.io/{user_ip}/json", timeout=3)
             )
             loc_resp.raise_for_status()
             country_code = loc_resp.json().get("country", "Unknown")
     except Exception:
         country_code = "Unknown"
-    
+
     # Run chat model in thread pool to avoid blocking
     loop = asyncio.get_event_loop()
     reply = await loop.run_in_executor(io_executor, chat_with_model, client_id, req.message)
-    
+
     # Database operations
     conn = get_db()
     cursor = conn.cursor()
@@ -266,14 +266,14 @@ async def chat(req: ChatRequest, client_id: str = Depends(get_client_from_header
         VALUES (?, ?, ?, ?, ?, ?)
     """, (client_id, session_id, "user", req.message, user_agent, country_code))
     conn.commit()
-    
+
     cursor.execute("""
         INSERT INTO chats (client_id, session_id, role, message, user_agent, country_code)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (client_id, session_id, "assistant", reply, user_agent, country_code))
     conn.commit()
     conn.close()
-    
+
     return {"session_id": session_id, "reply": reply, "country_code": country_code}
 
 @app.get("/client/chats/me")
@@ -307,6 +307,26 @@ async def get_domains(client_id: str = Depends(get_client_from_header)):
     domains = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return {"domains": domains}
+
+@app.get("/client/lookup-by-domain")
+def lookup_client_by_domain(domain: str ):
+    """Lookup client_id and chatbot_key by domain"""
+    try:
+        result = get_client_by_domain(domain)
+        if not result:
+            raise HTTPException(status_code=404, detail="Domain not found")
+
+        return {
+            "client_id": result["client_id"],
+            "chatbot_key": result["chatbot_key"],
+            "client_name": result["client_name"],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lookup failed: {str(e)}")
+
 
 @app.post("/client/register-my-domains/me")
 async def register_domains(domains: list[str], client_id: str = Depends(get_client_from_header)):
@@ -366,25 +386,25 @@ async def get_sessions(client_id: str = Depends(get_client_from_header)):
 
 @app.post("/client/me/crawl-and-embed", response_model=TaskResponse)
 async def crawl_and_embed(
-    req: CrawlRequest, 
+    req: CrawlRequest,
     background_tasks: BackgroundTasks,
     client_id: str = Depends(get_client_from_header)
 ):
     """Start crawl and embed process asynchronously"""
     task_id = f"crawl_embed_{client_id}_{uuid.uuid4().hex[:8]}"
-    
+
     # Initialize task status
     update_task_status(task_id, "queued", "Task queued for processing", 0)
-    
+
     # Add background task
     background_tasks.add_task(
-        crawl_and_embed_async, 
-        client_id, 
-        req.allowed_domain, 
-        req.start_url, 
+        crawl_and_embed_async,
+        client_id,
+        req.allowed_domain,
+        req.start_url,
         task_id
     )
-    
+
     return TaskResponse(
         task_id=task_id,
         status="queued",
@@ -393,23 +413,23 @@ async def crawl_and_embed(
 
 @app.post("/client/me/crawl", response_model=TaskResponse)
 async def crawl_only(
-    req: CrawlRequest, 
+    req: CrawlRequest,
     background_tasks: BackgroundTasks,
     client_id: str = Depends(get_client_from_header)
 ):
     """Start crawling process asynchronously"""
     task_id = f"crawl_{client_id}_{uuid.uuid4().hex[:8]}"
-    
+
     update_task_status(task_id, "queued", "Crawl task queued for processing", 0)
-    
+
     background_tasks.add_task(
-        crawl_website_async, 
-        client_id, 
-        req.allowed_domain, 
-        req.start_url, 
+        crawl_website_async,
+        client_id,
+        req.allowed_domain,
+        req.start_url,
         task_id
     )
-    
+
     return TaskResponse(
         task_id=task_id,
         status="queued",
@@ -423,11 +443,11 @@ async def embed_only(
 ):
     """Start embeddings process asynchronously"""
     task_id = f"embed_{client_id}_{uuid.uuid4().hex[:8]}"
-    
+
     update_task_status(task_id, "queued", "Embeddings task queued for processing", 0)
-    
+
     background_tasks.add_task(run_embeddings_async, client_id, task_id)
-    
+
     return TaskResponse(
         task_id=task_id,
         status="queued",
@@ -439,39 +459,39 @@ async def get_task_status(task_id: str, client_id: str = Depends(get_client_from
     """Get status of a background task"""
     if task_id not in task_status:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     # Verify task belongs to client (basic security)
     if not task_id.startswith(f"crawl_{client_id}") and not task_id.startswith(f"embed_{client_id}") and not task_id.startswith(f"crawl_embed_{client_id}"):
         raise HTTPException(status_code=403, detail="Access denied to this task")
-    
+
     return task_status[task_id]
 
 @app.get("/client/me/tasks")
 async def get_client_tasks(client_id: str = Depends(get_client_from_header)):
     """Get all tasks for a client"""
     client_tasks = {
-        k: v for k, v in task_status.items() 
-        if k.startswith(f"crawl_{client_id}") or 
-           k.startswith(f"embed_{client_id}") or 
+        k: v for k, v in task_status.items()
+        if k.startswith(f"crawl_{client_id}") or
+           k.startswith(f"embed_{client_id}") or
            k.startswith(f"crawl_embed_{client_id}")
     }
     return {"tasks": client_tasks}
 
 @app.post("/client/upload-qa/me")
 async def upload_qa(
-    file: UploadFile = File(...), 
+    file: UploadFile = File(...),
     client_id: str = Depends(get_client_from_header)
 ):
     """Upload Q&A file asynchronously"""
     client_dir = os.path.join(CLIENTS_DIR, client_id)
     os.makedirs(client_dir, exist_ok=True)
     file_path = os.path.join(client_dir, "custom_qa.json")
-    
+
     # Use aiofiles for async file operations
     async with aiofiles.open(file_path, "wb") as f:
         content = await file.read()
         await f.write(content)
-    
+
     return {"status": "success", "message": f"Uploaded Q&A for {client_id}"}
 
 @app.get("/client/status/me")
@@ -508,17 +528,17 @@ async def cleanup_old_tasks():
     """Clean up old completed/failed tasks (older than 1 hour)"""
     cutoff_time = datetime.now() - timedelta(hours=1)
     cleaned_count = 0
-    
+
     tasks_to_remove = []
     for task_id, task_data in task_status.items():
         task_time = datetime.fromisoformat(task_data["updated_at"])
         if task_time < cutoff_time and task_data["status"] in ["completed", "failed"]:
             tasks_to_remove.append(task_id)
-    
+
     for task_id in tasks_to_remove:
         del task_status[task_id]
         cleaned_count += 1
-    
+
     return {"cleaned_tasks": cleaned_count, "remaining_tasks": len(task_status)}
 
 # Cleanup on shutdown
