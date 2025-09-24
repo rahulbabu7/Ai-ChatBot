@@ -13,3 +13,5 @@ bcrypt
 pyjwt
 passlib[bcrypt]
 python-multipart
+celery 
+redis[asyncio]
