@@ -2,7 +2,7 @@ import os
 import sys
 import uuid
 from typing import Optional
-
+from PyPDF2 import PdfReader
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -18,7 +18,7 @@ from backend.db import get_tasks_for_client
 from backend.auth_utils import create_jwt, get_client_from_header
 
 # Celery
-from backend.tasks import crawl_website_task, run_embeddings_task, crawl_and_embed_pipeline
+from backend.tasks import crawl_website_task, run_embeddings_task, crawl_and_embed_pipeline, pdf_embed_pipeline
 from backend.celery_app import celery_app
 
 # Add Chatbot/LLM path
@@ -404,6 +404,72 @@ async def upload_qa(file: UploadFile = File(...), client_id: str = Depends(get_c
         await f.write(content)
 
     return {"status": "success", "message": f"Uploaded Q&A for {client_id}"}
+
+
+# Add these endpoints to your api.py file
+
+@app.post("/client/upload-pdf/me")
+async def upload_pdf(file: UploadFile = File(...), client_id: str = Depends(get_client_from_header)):
+    """Upload and extract text from a PDF file."""
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+    
+    client_dir = os.path.join(CLIENTS_DIR, client_id)
+    os.makedirs(client_dir, exist_ok=True)
+    
+    # Save the PDF file
+    pdf_path = os.path.join(client_dir, "custom_pdf.pdf")
+    async with aiofiles.open(pdf_path, "wb") as f:
+        content = await file.read()
+        await f.write(content)
+    
+    try:
+        # Extract text from PDF using PyPDF2
+        reader = PdfReader(pdf_path)
+        text_content = ""
+        
+        for page in reader.pages:
+            text_content += page.extract_text() + "\n\n"
+        
+        # Save extracted text
+        text_path = os.path.join(client_dir, "custom_pdf.txt")
+        async with aiofiles.open(text_path, "w", encoding="utf-8") as f:
+            await f.write(text_content)
+        
+        return {
+            "status": "success", 
+            "message": f"PDF uploaded and text extracted for {client_id}",
+            "pages_extracted": len(reader.pages),
+            "text_length": len(text_content)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to extract text from PDF: {str(e)}")
+
+
+@app.post("/client/me/embed-pdf", response_model=TaskResponse)
+async def embed_pdf(client_id: str = Depends(get_client_from_header)):
+    """Start embedding process for uploaded PDF."""
+    client_dir = os.path.join(CLIENTS_DIR, client_id)
+    pdf_text_path = os.path.join(client_dir, "custom_pdf.txt")
+    
+    if not os.path.exists(pdf_text_path):
+        raise HTTPException(status_code=404, detail="No PDF text found. Please upload a PDF first.")
+    
+    task = pdf_embed_pipeline.delay(client_id)
+    return TaskResponse(task_id=task.id, status="queued", message="PDF embedding task queued.")
+
+
+@app.get("/client/pdf-status/me")
+async def check_pdf_status(client_id: str = Depends(get_client_from_header)):
+    """Check PDF processing status."""
+    client_dir = os.path.join(CLIENTS_DIR, client_id)
+    return {
+        "pdf_uploaded": os.path.exists(os.path.join(client_dir, "custom_pdf.pdf")),
+        "text_extracted": os.path.exists(os.path.join(client_dir, "custom_pdf.txt")),
+        "embedded": os.path.exists(os.path.join(client_dir, "embeddings.json")),
+    }
+
 
 
 @app.get("/client/status/me")

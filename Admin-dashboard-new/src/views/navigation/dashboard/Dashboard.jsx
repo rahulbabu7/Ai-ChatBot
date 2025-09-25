@@ -13,7 +13,8 @@ const Dashboard = () => {
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState('');
   const [qaFile, setQaFile] = useState(null);
-
+  const [pdfFile, setPdfFile] = useState(null);
+  
   // Task management
   const [activeTasks, setActiveTasks] = useState({});
   const [taskHistory, setTaskHistory] = useState([]);
@@ -199,12 +200,46 @@ const Dashboard = () => {
     formData.append('file', qaFile);
 
     try {
-      await call('/client/me/upload-qa', {
+      await call('/client/upload-qa/me', {
         method: 'POST',
         body: formData
       });
     } catch (e) {
       console.error('Failed to upload Q&A:', e);
+    }
+  };
+
+  const uploadPDF = async () => {
+    if (!pdfFile) {
+      alert("Please select a PDF file first.");
+      return;
+    }
+    const formData = new FormData();
+    formData.append("file", pdfFile);
+
+    try {
+      await call("/client/upload-pdf/me", {
+        method: "POST",
+        body: formData,
+      });
+    } catch (e) {
+      console.error("Failed to upload PDF:", e);
+    }
+  };
+
+  const triggerPDFEmbed = async () => {
+    try {
+      const data = await call('/client/me/embed-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+
+      if (data.task_id) {
+        setLog(`PDF Embedding Task started with ID: ${data.task_id}\nStatus: ${data.status}\nMessage: ${data.message}`);
+      }
+    } catch (e) {
+      console.error('Failed to start PDF embedding:', e);
     }
   };
 
@@ -291,16 +326,11 @@ const Dashboard = () => {
           <button className="btn btn-primary" disabled={busy} onClick={triggerCrawlAndEmbed}>
             🚀 Done
           </button>
-          {/* <button className="btn btn-info" disabled={busy} onClick={triggerCrawlOnly}>
-            🕷️ Crawl Only
-          </button>
-          <button className="btn btn-success" disabled={busy} onClick={triggerEmbedOnly}>
-            🧠 Embed Only
-          </button>*/}
         </div>
 
         {/* Q&A Upload */}
         <div className="mb-3 border-top pt-3">
+          <h6 className="text-muted">Custom Q&A</h6>
           <label htmlFor="qaFile" className="form-label">
             Upload Q&A JSON File:
           </label>
@@ -314,6 +344,32 @@ const Dashboard = () => {
           <button className="btn btn-warning" disabled={busy || !qaFile} onClick={uploadQA}>
             📥 Upload Q&A
           </button>
+        </div>
+
+        {/* PDF Upload and Processing */}
+        <div className="mb-3 border-top pt-3">
+          <h6 className="text-muted">PDF Document Processing</h6>
+          <label htmlFor="pdfFile" className="form-label">
+            Upload Custom PDF:
+          </label>
+          <input
+            id="pdfFile"
+            type="file"
+            accept="application/pdf"
+            className="form-control mb-2"
+            onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
+          />
+          <div className="d-flex flex-wrap gap-2">
+            <button className="btn btn-warning" disabled={busy || !pdfFile} onClick={uploadPDF}>
+              📄 Upload PDF
+            </button>
+            <button className="btn btn-success" disabled={busy} onClick={triggerPDFEmbed}>
+              🚀 Done
+            </button>
+          </div>
+          <small className="form-text text-muted">
+            Step 1: Upload your PDF file. Step 2: Click "Embed PDF" to process it for the chatbot.
+          </small>
         </div>
       </div>
 
@@ -427,18 +483,6 @@ const Dashboard = () => {
           {log || 'No logs yet. Start a task to see real-time updates.'}
         </pre>
       </div>
-
-      {/* System Information */}
-      {/* <div className="mt-4">
-        <div className="alert alert-info">
-          <h6>🚀 Concurrent Processing Enabled</h6>
-          <p className="mb-0">
-            Your tasks now run in the background! You can start multiple crawling and embedding
-            operations simultaneously. The system will process them concurrently without blocking
-            other users.
-          </p>
-        </div>
-      </div>*/}
     </div>
   );
 };
