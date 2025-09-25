@@ -14,10 +14,21 @@ const Dashboard = () => {
   const [log, setLog] = useState('');
   const [qaFile, setQaFile] = useState(null);
   const [pdfFile, setPdfFile] = useState(null);
-  
+
   // Task management
   const [activeTasks, setActiveTasks] = useState({});
   const [taskHistory, setTaskHistory] = useState([]);
+
+  // New states for custom Q&A
+  const [showQAModal, setShowQAModal] = useState(false);
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [qaList, setQaList] = useState([]);
+
+  // New states for viewing content
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [viewType, setViewType] = useState(''); // 'qa' or 'pdf'
+  const [viewContent, setViewContent] = useState(null);
 
   const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
 
@@ -58,7 +69,6 @@ const Dashboard = () => {
         const data = await res.json();
         setActiveTasks(data.tasks || {});
 
-        // Convert to array for history display
         const taskArray = Object.entries(data.tasks || {}).map(([id, task]) => ({
           id,
           ...task
@@ -87,23 +97,17 @@ const Dashboard = () => {
             [taskId]: taskData
           }));
 
-          // Update task history
           setTaskHistory((prev) => {
             const updated = prev.map((task) => (task.id === taskId ? { id: taskId, ...taskData } : task));
-
-            // Add new task if not in history
             if (!updated.find((task) => task.id === taskId)) {
               updated.unshift({ id: taskId, ...taskData });
             }
-
             return updated.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
           });
 
-          // Continue polling if task is still running
           if (taskData.status === 'running' || taskData.status === 'queued') {
             setTimeout(() => pollTaskStatus(taskId), 2000);
           } else {
-            // Task completed, refresh client tasks
             setTimeout(fetchClientTasks, 1000);
           }
 
@@ -118,7 +122,7 @@ const Dashboard = () => {
 
   const call = async (url, options = {}) => {
     setBusy(true);
-    setLog(`POST ${url} ...`);
+    setLog(`Calling ${url} ...`);
     try {
       const res = await fetch(`${API}${url}`, {
         ...options,
@@ -127,7 +131,6 @@ const Dashboard = () => {
       const data = await res.json();
       setLog(JSON.stringify(data, null, 2));
 
-      // If response contains task_id, start polling
       if (data.task_id) {
         pollTaskStatus(data.task_id);
       }
@@ -141,53 +144,23 @@ const Dashboard = () => {
     }
   };
 
+  // Existing functions...
   const triggerCrawlAndEmbed = async () => {
     if (!allowedDomain || !startUrl) {
       alert('Please fill in the allowed domain and start URL.');
       return;
     }
-
     try {
       const data = await call('/client/me/crawl-and-embed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ allowed_domain: allowedDomain, start_url: startUrl })
       });
-
       if (data.task_id) {
         setLog(`Task started with ID: ${data.task_id}\nStatus: ${data.status}\nMessage: ${data.message}`);
       }
     } catch (e) {
       console.error('Failed to start crawl and embed:', e);
-    }
-  };
-
-  const triggerCrawlOnly = async () => {
-    if (!allowedDomain || !startUrl) {
-      alert('Please fill in the allowed domain and start URL.');
-      return;
-    }
-
-    try {
-      await call('/client/me/crawl', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ allowed_domain: allowedDomain, start_url: startUrl })
-      });
-    } catch (e) {
-      console.error('Failed to start crawl:', e);
-    }
-  };
-
-  const triggerEmbedOnly = async () => {
-    try {
-      await call('/client/me/embed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      });
-    } catch (e) {
-      console.error('Failed to start embeddings:', e);
     }
   };
 
@@ -198,7 +171,6 @@ const Dashboard = () => {
     }
     const formData = new FormData();
     formData.append('file', qaFile);
-
     try {
       await call('/client/upload-qa/me', {
         method: 'POST',
@@ -216,7 +188,6 @@ const Dashboard = () => {
     }
     const formData = new FormData();
     formData.append("file", pdfFile);
-
     try {
       await call("/client/upload-pdf/me", {
         method: "POST",
@@ -234,7 +205,6 @@ const Dashboard = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
       });
-
       if (data.task_id) {
         setLog(`PDF Embedding Task started with ID: ${data.task_id}\nStatus: ${data.status}\nMessage: ${data.message}`);
       }
@@ -243,39 +213,97 @@ const Dashboard = () => {
     }
   };
 
+  // Custom Q&A functions
+  const addQAPair = () => {
+    if (!question.trim() || !answer.trim()) {
+      alert("Please fill both fields");
+      return;
+    }
+    setQaList([...qaList, { question, answer }]);
+    setQuestion('');
+    setAnswer('');
+  };
+
+  const submitQAs = async () => {
+    if (qaList.length === 0) {
+      alert("Please add at least one Q&A.");
+      return;
+    }
+
+    const qaJson = qaList;
+    const blob = new Blob([JSON.stringify(qaJson, null, 2)], { type: "application/json" });
+    const formData = new FormData();
+    formData.append("file", blob, "manual_qa.json");
+
+    try {
+      await call('/client/upload-qa/me', { method: 'POST', body: formData });
+      setShowQAModal(false);
+      setQuestion('');
+      setAnswer('');
+    } catch (e) {
+      console.error("Failed to upload Q&A:", e);
+    }
+  };
+
+  // New functions for viewing content
+  const viewQAContent = async () => {
+    try {
+      const data = await call('/client/view-qa/me', { method: 'GET' });
+      setViewContent(data);
+      setViewType('qa');
+      setShowViewModal(true);
+    } catch (e) {
+      console.error('Failed to fetch Q&A content:', e);
+    }
+  };
+
+  const viewPDFInfo = async () => {
+    try {
+      const data = await call('/client/view-pdf-info/me', { method: 'GET' });
+      setViewContent(data);
+      setViewType('pdf');
+      setShowViewModal(true);
+    } catch (e) {
+      console.error('Failed to fetch PDF info:', e);
+    }
+  };
+
+  const deleteContent = async (contentType) => {
+    if (!confirm(`Are you sure you want to delete your ${contentType} content?`)) {
+      return;
+    }
+
+    try {
+      const endpoint = contentType === 'qa' ? '/client/delete-qa/me' : '/client/delete-pdf/me';
+      await call(endpoint, { method: 'DELETE' });
+      setShowViewModal(false);
+      setViewContent(null);
+    } catch (e) {
+      console.error(`Failed to delete ${contentType}:`, e);
+    }
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
-      case 'completed':
-        return 'success';
-      case 'failed':
-        return 'danger';
-      case 'running':
-        return 'primary';
-      case 'pending':
-        return 'warning';
-      default:
-        return 'secondary';
+      case 'completed': return 'success';
+      case 'failed': return 'danger';
+      case 'running': return 'primary';
+      case 'pending': return 'warning';
+      default: return 'secondary';
     }
   };
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'completed':
-        return '✅';
-      case 'failed':
-        return '❌';
-      case 'running':
-        return '🔄';
-      case 'queued':
-        return '⏳';
-      default:
-        return '📋';
+      case 'completed': return '✅';
+      case 'failed': return '❌';
+      case 'running': return '🔄';
+      case 'queued': return '⏳';
+      default: return '📋';
     }
   };
 
-  const refreshTasks = () => {
-    fetchClientTasks();
-  };
+  const refreshTasks = () => fetchClientTasks();
 
   if (!token) {
     return <div className="text-center mt-10 text-red-600">Please login to access the dashboard.</div>;
@@ -283,6 +311,7 @@ const Dashboard = () => {
 
   return (
     <div className="container mt-4">
+      {/* Top actions */}
       <div className="mb-3">
         <button className="btn btn-secondary" onClick={() => navigate('/dashboard-admin')}>
           ← Back to Admin Dashboard
@@ -294,189 +323,211 @@ const Dashboard = () => {
 
       <h2 className="mb-4">Manage Client: {clientName}</h2>
 
-      {/* Crawling Configuration */}
+      {/* Crawling Config */}
       <div className="card p-4 shadow-sm mb-4">
         <h5 className="card-title">Website Crawling & Embeddings</h5>
-
         <div className="mb-3">
-          <label htmlFor="allowedDomain" className="form-label">
-            Allowed Domain:
-          </label>
-          <input
-            id="allowedDomain"
-            className="form-control mb-3"
-            placeholder="e.g. abc.edu"
-            value={allowedDomain}
-            onChange={(e) => setDomain(e.target.value)}
-          />
-
-          <label htmlFor="startUrl" className="form-label">
-            Start URL:
-          </label>
-          <input
-            id="startUrl"
-            className="form-control mb-3"
-            placeholder="e.g. https://abc.edu/"
-            value={startUrl}
-            onChange={(e) => setStartUrl(e.target.value)}
-          />
+          <label className="form-label">Allowed Domain:</label>
+          <input className="form-control mb-3" value={allowedDomain} onChange={(e) => setDomain(e.target.value)} />
+          <label className="form-label">Start URL:</label>
+          <input className="form-control mb-3" value={startUrl} onChange={(e) => setStartUrl(e.target.value)} />
         </div>
+        <button className="btn btn-primary" disabled={busy} onClick={triggerCrawlAndEmbed}>
+          🚀 Crawl & Embed Website
+        </button>
+      </div>
 
-        <div className="d-flex flex-wrap gap-2 mb-3">
-          <button className="btn btn-primary" disabled={busy} onClick={triggerCrawlAndEmbed}>
-            🚀 Done
-          </button>
-        </div>
-
-        {/* Q&A Upload */}
-        <div className="mb-3 border-top pt-3">
-          <h6 className="text-muted">Custom Q&A</h6>
-          <label htmlFor="qaFile" className="form-label">
-            Upload Q&A JSON File:
-          </label>
-          <input
-            id="qaFile"
-            type="file"
-            accept="application/json"
-            className="form-control mb-2"
-            onChange={(e) => setQaFile(e.target.files?.[0] || null)}
-          />
-          <button className="btn btn-warning" disabled={busy || !qaFile} onClick={uploadQA}>
-            📥 Upload Q&A
-          </button>
-        </div>
-
-        {/* PDF Upload and Processing */}
-        <div className="mb-3 border-top pt-3">
-          <h6 className="text-muted">PDF Document Processing</h6>
-          <label htmlFor="pdfFile" className="form-label">
-            Upload Custom PDF:
-          </label>
-          <input
-            id="pdfFile"
-            type="file"
-            accept="application/pdf"
-            className="form-control mb-2"
-            onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
-          />
-          <div className="d-flex flex-wrap gap-2">
-            <button className="btn btn-warning" disabled={busy || !pdfFile} onClick={uploadPDF}>
-              📄 Upload PDF
-            </button>
-            <button className="btn btn-success" disabled={busy} onClick={triggerPDFEmbed}>
-              🚀 Done
-            </button>
+      {/* Q&A Section */}
+      <div className="card p-4 shadow-sm mb-4">
+        <h5 className="card-title">Custom Q&A Management</h5>
+        <div className="row">
+          <div className="col-md-8">
+            <label className="form-label">Upload Q&A JSON File:</label>
+            <input type="file" accept="application/json" className="form-control mb-2" onChange={(e) => setQaFile(e.target.files?.[0] || null)} />
+            <div className="d-flex flex-wrap gap-2">
+              <button className="btn btn-warning" disabled={busy || !qaFile} onClick={uploadQA}>📥 Upload Q&A File</button>
+              <button className="btn btn-outline-success" onClick={() => setShowQAModal(true)}>➕ Add Custom Q&A</button>
+            </div>
           </div>
-          <small className="form-text text-muted">
-            Step 1: Upload your PDF file. Step 2: Click "Embed PDF" to process it for the chatbot.
-          </small>
+          <div className="col-md-4">
+            <label className="form-label">Manage Existing Q&A:</label>
+            <div className="d-grid gap-2">
+              <button className="btn btn-outline-info" onClick={viewQAContent}>👁️ View Q&A Content</button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Active Tasks Status */}
-      {Object.keys(activeTasks).length > 0 && (
-        <div className="card p-4 shadow-sm mb-4">
-          <h5 className="card-title">Active Tasks</h5>
-          <div className="row">
-            {Object.entries(activeTasks).map(([taskId, task]) => (
-              <div key={taskId} className="col-md-6 mb-3">
-                <div className={`card border-${getStatusColor(task.status)}`}>
-                  <div className="card-body">
-                    <h6 className="card-title">
-                      {getStatusIcon(task.status)} {taskId.split('_')[0].toUpperCase()}
-                    </h6>
-                    <p className="card-text">
-                      <strong>Status:</strong> <span className={`badge bg-${getStatusColor(task.status)}`}>{task.status}</span>
-                    </p>
-                    <p className="card-text">{task.message}</p>
-                    {task.progress > 0 && (
-                      <div className="progress mb-2">
-                        <div className="progress-bar" style={{ width: `${task.progress}%` }}>
-                          {task.progress}%
+      {/* PDF Section */}
+      <div className="card p-4 shadow-sm mb-4">
+        <h5 className="card-title">PDF Document Management</h5>
+        <div className="row">
+          <div className="col-md-8">
+            <label className="form-label">Upload Custom PDF:</label>
+            <input type="file" accept="application/pdf" className="form-control mb-2" onChange={(e) => setPdfFile(e.target.files?.[0] || null)} />
+            <div className="d-flex flex-wrap gap-2">
+              <button className="btn btn-warning" disabled={busy || !pdfFile} onClick={uploadPDF}>📄 Upload PDF</button>
+              <button className="btn btn-success" disabled={busy} onClick={triggerPDFEmbed}>🚀 Embed PDF</button>
+            </div>
+          </div>
+          <div className="col-md-4">
+            <label className="form-label">Manage Existing PDF:</label>
+            <div className="d-grid gap-2">
+              <button className="btn btn-outline-info" onClick={viewPDFInfo}>👁️ View PDF Info</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Custom Q&A Modal */}
+      {showQAModal && (
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-lg">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Add Custom Q&A Pairs</h5>
+                <button className="btn-close" onClick={() => setShowQAModal(false)}></button>
+              </div>
+              <div className="modal-body">
+                <div className="mb-3">
+                  <label className="form-label">Question</label>
+                  <input type="text" className="form-control" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Enter your question..." />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Answer</label>
+                  <textarea className="form-control" rows="3" value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="Enter the answer..."></textarea>
+                </div>
+                <button className="btn btn-secondary mb-3" onClick={addQAPair}>➕ Add to List ({qaList.length} items)</button>
+                
+                {qaList.length > 0 && (
+                  <div className="border p-3 bg-light" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    <h6>Q&A List Preview:</h6>
+                    {qaList.map((qa, i) => (
+                      <div key={i} className="mb-2 p-2 border-bottom">
+                        <strong>Q{i+1}:</strong> {qa.question}<br />
+                        <strong>A{i+1}:</strong> {qa.answer}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setShowQAModal(false)}>Cancel</button>
+                <button className="btn btn-primary" onClick={submitQAs} disabled={qaList.length === 0}>
+                  📤 Submit All Q&As ({qaList.length})
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Content Viewer Modal */}
+      {showViewModal && (
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-xl">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">
+                  {viewType === 'qa' ? 'Q&A Content' : 'PDF Information'}
+                </h5>
+                <button className="btn-close" onClick={() => setShowViewModal(false)}></button>
+              </div>
+              <div className="modal-body">
+                {viewType === 'qa' && viewContent && (
+                  <div>
+                    {viewContent.has_qa ? (
+                      <div>
+                        <div className="alert alert-success">
+                          Found {viewContent.qa_count} Q&A pairs
+                        </div>
+                        <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                          {viewContent.qa_data.map((qa, i) => (
+                            <div key={i} className="card mb-2">
+                              <div className="card-body">
+                                <h6 className="card-title">Q{i+1}: {qa.question || qa.questions?.[0]}</h6>
+                                {qa.questions?.length > 1 && (
+                                  <small className="text-muted">
+                                    Alternative questions: {qa.questions.slice(1).join(', ')}
+                                  </small>
+                                )}
+                                <p className="card-text mt-2">
+                                  <strong>Answer:</strong> {qa.answer}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    )}
-                    <small className="text-muted">Last Updated: {new Date(task.updated_at).toLocaleString()}</small>
-                    {task.status === 'running' && (
-                      <button className="btn btn-sm btn-outline-primary mt-2" onClick={() => pollTaskStatus(taskId)}>
-                        🔄 Refresh Status
-                      </button>
+                    ) : (
+                      <div className="alert alert-warning">
+                        {viewContent.message}
+                      </div>
                     )}
                   </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+                )}
 
-      {/* Task History */}
-      {taskHistory.length > 0 && (
-        <div className="card p-4 shadow-sm mb-4">
-          <h5 className="card-title">Task History</h5>
-          <div className="table-responsive">
-            <table className="table table-striped">
-              <thead>
-                <tr>
-                  <th>Task</th>
-                  <th>Status</th>
-                  <th>Message</th>
-                  <th>Progress</th>
-                  <th>Last Updated</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {taskHistory.slice(0, 10).map((task) => (
-                  <tr key={task.id}>
-                    <td>
-                      <small className="text-muted">{task.id}</small>
-                    </td>
-                    <td>
-                      <span className={`badge bg-${getStatusColor(task.status)}`}>
-                        {getStatusIcon(task.status)} {task.status}
-                      </span>
-                    </td>
-                    <td>
-                      <small>{task.message}</small>
-                    </td>
-                    <td>
-                      {task.progress > 0 && (
-                        <div className="progress" style={{ height: '20px', width: '100px' }}>
-                          <div className="progress-bar progress-bar-sm" style={{ width: `${task.progress}%` }}>
-                            {task.progress}%
+                {viewType === 'pdf' && viewContent && (
+                  <div>
+                    {viewContent.has_pdf ? (
+                      <div>
+                        <div className="alert alert-success">
+                          PDF file found and processed
+                        </div>
+                        <div className="row">
+                          <div className="col-md-6">
+                            <h6>File Information:</h6>
+                            <ul className="list-group list-group-flush">
+                              <li className="list-group-item">
+                                <strong>Filename:</strong> {viewContent.pdf_info.filename}
+                              </li>
+                              <li className="list-group-item">
+                                <strong>Size:</strong> {viewContent.pdf_info.size_mb} MB
+                              </li>
+                              <li className="list-group-item">
+                                <strong>Text Extracted:</strong> {viewContent.has_extracted_text ? 'Yes' : 'No'}
+                              </li>
+                              {viewContent.pdf_info.word_count && (
+                                <li className="list-group-item">
+                                  <strong>Word Count:</strong> {viewContent.pdf_info.word_count}
+                                </li>
+                              )}
+                            </ul>
+                          </div>
+                          <div className="col-md-6">
+                            {viewContent.pdf_info.preview && (
+                              <div>
+                                <h6>Text Preview:</h6>
+                                <div className="border p-3 bg-light" style={{ maxHeight: '300px', overflowY: 'auto', fontSize: '0.9em' }}>
+                                  {viewContent.pdf_info.preview}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
-                      )}
-                    </td>
-                    <td>
-                      <small>{new Date(task.updated_at).toLocaleString()}</small>
-                    </td>
-                    <td>
-                      {(task.status === 'running' || task.status === 'queued') && (
-                        <button className="btn btn-sm btn-outline-primary" onClick={() => pollTaskStatus(task.id)}>
-                          🔄
-                        </button>
-                      )}
-                      {task.result && (
-                        <button
-                          className="btn btn-sm btn-outline-info ms-1"
-                          onClick={() => setLog(JSON.stringify(task, null, 2))}
-                          title="View Details"
-                        >
-                          👁️
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      </div>
+                    ) : (
+                      <div className="alert alert-warning">
+                        No PDF file found
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setShowViewModal(false)}>Close</button>
+                {((viewType === 'qa' && viewContent?.has_qa) || (viewType === 'pdf' && viewContent?.has_pdf)) && (
+                  <button className="btn btn-danger" onClick={() => deleteContent(viewType)}>
+                    🗑️ Delete {viewType === 'qa' ? 'Q&A' : 'PDF'}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Logs Section */}
+      {/* Logs */}
       <div className="card p-4 shadow-sm">
         <h5 className="card-title">Logs & Status</h5>
         <pre className="bg-light p-3 border rounded" style={{ maxHeight: '400px', overflow: 'auto' }}>

@@ -403,7 +403,14 @@ async def upload_qa(file: UploadFile = File(...), client_id: str = Depends(get_c
         content = await file.read()
         await f.write(content)
 
-    return {"status": "success", "message": f"Uploaded Q&A for {client_id}"}
+    # Clear cache directly
+    try:
+        from llm_service import _load_custom_qa_cached
+        _load_custom_qa_cached.cache_clear()
+    except Exception:
+        pass
+
+    return {"status": "success", "message": f"Uploaded Q&A for {client_id} - cache refreshed"}
 
 
 # Add these endpoints to your api.py file
@@ -480,3 +487,128 @@ async def check_status(client_id: str = Depends(get_client_from_header)):
         "qa_uploaded": os.path.exists(os.path.join(client_dir, "custom_qa.json")),
         "embedded": True,
     }
+
+
+@app.get("/client/view-qa/me")
+async def view_qa(client_id: str = Depends(get_client_from_header)):
+    """View uploaded Q&A content"""
+    client_dir = os.path.join(CLIENTS_DIR, client_id)
+    qa_path = os.path.join(client_dir, "custom_qa.json")
+    
+    if not os.path.exists(qa_path):
+        return {
+            "has_qa": False,
+            "qa_data": [],
+            "message": "No Q&A file found"
+        }
+    
+    try:
+        async with aiofiles.open(qa_path, "r", encoding="utf-8") as f:
+            content = await f.read()
+            qa_data = json.loads(content)
+        
+        return {
+            "has_qa": True,
+            "qa_data": qa_data,
+            "qa_count": len(qa_data),
+            "message": f"Found {len(qa_data)} Q&A pairs"
+        }
+    except Exception as e:
+        return {
+            "has_qa": False,
+            "qa_data": [],
+            "error": str(e),
+            "message": "Error reading Q&A file"
+        }
+
+
+
+@app.get("/client/view-pdf-info/me")
+async def view_pdf_info(client_id: str = Depends(get_client_from_header)):
+    """View PDF upload information"""
+    client_dir = os.path.join(CLIENTS_DIR, client_id)
+    pdf_path = os.path.join(client_dir, "custom_pdf.pdf")
+    text_path = os.path.join(client_dir, "custom_pdf.txt")
+    
+    result = {
+        "has_pdf": os.path.exists(pdf_path),
+        "has_extracted_text": os.path.exists(text_path),
+        "pdf_info": {}
+    }
+    
+    if result["has_pdf"]:
+        try:
+            # Get PDF file info
+            pdf_stat = os.stat(pdf_path)
+            result["pdf_info"] = {
+                "filename": "custom_pdf.pdf",
+                "size_bytes": pdf_stat.st_size,
+                "size_mb": round(pdf_stat.st_size / (1024 * 1024), 2),
+                "uploaded_date": pdf_stat.st_mtime
+            }
+            
+            # Get text extraction info if available
+            if result["has_extracted_text"]:
+                try:
+                    async with aiofiles.open(text_path, "r", encoding="utf-8") as f:
+                        text_content = await f.read()
+                    
+                    result["pdf_info"]["text_length"] = len(text_content)
+                    result["pdf_info"]["word_count"] = len(text_content.split())
+                    result["pdf_info"]["preview"] = text_content[:500] + "..." if len(text_content) > 500 else text_content
+                except Exception:
+                    result["pdf_info"]["text_extraction_error"] = "Could not read extracted text"
+            
+        except Exception as e:
+            result["pdf_info"]["error"] = str(e)
+    
+    return result
+
+
+@app.delete("/client/delete-qa/me")
+async def delete_qa(client_id: str = Depends(get_client_from_header)):
+    """Delete Q&A file"""
+    client_dir = os.path.join(CLIENTS_DIR, client_id)
+    qa_path = os.path.join(client_dir, "custom_qa.json")
+    
+    if not os.path.exists(qa_path):
+        raise HTTPException(status_code=404, detail="No Q&A file found")
+    
+    try:
+        os.remove(qa_path)
+        
+        # Clear cache
+        from llm_service import reload_custom_qa_cache
+        reload_custom_qa_cache(client_id)
+        
+        return {"success": True, "message": "Q&A file deleted and cache cleared"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete Q&A file: {str(e)}")
+
+
+@app.delete("/client/delete-pdf/me")
+async def delete_pdf(client_id: str = Depends(get_client_from_header)):
+    """Delete PDF files"""
+    client_dir = os.path.join(CLIENTS_DIR, client_id)
+    pdf_path = os.path.join(client_dir, "custom_pdf.pdf")
+    text_path = os.path.join(client_dir, "custom_pdf.txt")
+    
+    deleted_files = []
+    errors = []
+    
+    for file_path, file_type in [(pdf_path, "PDF"), (text_path, "extracted text")]:
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                deleted_files.append(file_type)
+            except Exception as e:
+                errors.append(f"Failed to delete {file_type}: {str(e)}")
+    
+    if not deleted_files:
+        raise HTTPException(status_code=404, detail="No PDF files found")
+    
+    result = {"success": True, "deleted_files": deleted_files}
+    if errors:
+        result["errors"] = errors
+    
+    return result
