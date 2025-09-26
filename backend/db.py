@@ -54,10 +54,23 @@ def init_db():
         )
     """)
 
+    # Task history table
+    cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id TEXT PRIMARY KEY,
+                client_id TEXT NOT NULL,
+                name TEXT,
+                status TEXT,
+                info TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
     # Create indexes for better performance
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_chats_client_session ON chats(client_id, session_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_domain_mappings_domain ON domain_mappings(domain)")
-
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_client ON tasks(client_id)")
     conn.commit()
     conn.close()
     print("✅ Database initialized successfully")
@@ -142,5 +155,59 @@ def get_client_by_domain(domain):
         return None
     finally:
         conn.close()
+
+
+
+# ----------------------------
+# TASK HELPERS
+# ----------------------------
+def add_task(task_id: str, client_id: str, name: str, status: str = "queued", info: str = None):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO tasks (id, client_id, name, status, info)
+            VALUES (?, ?, ?, ?, ?)
+        """, (task_id, client_id, name, status, info))
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        print(f"Error adding task: {e}")
+        return False
+    finally:
+        conn.close()
+
+def update_task(task_id: str, status: str, info: str = None):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE tasks SET status=?, info=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
+        """, (status, info, task_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        print(f"Error updating task: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_tasks_for_client(client_id: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT id, name, status, info, created_at, updated_at
+            FROM tasks
+            WHERE client_id=?
+            ORDER BY created_at DESC
+        """, (client_id,))
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
 # Initialize DB when module is imported
 init_db()

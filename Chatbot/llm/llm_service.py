@@ -90,8 +90,8 @@ def _load_custom_qa_cached(client_id: str) -> List[Dict[str, Any]]:
     }
     """
     path = _custom_qa_path(client_id)
+    
     if not os.path.exists(path):
-        # No custom QA for this client
         return []
 
     try:
@@ -123,27 +123,32 @@ def _load_custom_qa_cached(client_id: str) -> List[Dict[str, Any]]:
 def reload_custom_qa_cache(client_id: str) -> None:
     """If you update custom_qa.json, call this to refresh cache."""
     try:
-        _load_custom_qa_cached.cache_clear()  # clear all; lightweight enough
+        _load_custom_qa_cached.cache_clear()
     except Exception:
         pass
     # Touch load to repopulate
     _ = _load_custom_qa_cached(client_id)
 
 
-def find_custom_answer(client_id: str, query: str, threshold: float = 0.8) -> Optional[str]:
+def find_custom_answer(client_id: str, query: str, threshold: float = 0.7) -> Optional[str]:
+    """Find matching answer from custom Q&A with lowered threshold for better matching."""
     qa_entries = _load_custom_qa_cached(client_id)
+    
     if not qa_entries:
         return None
+        
     model = _get_sentence_model()
     q_emb = model.encode(query)
     best_score = -1.0
     best_answer = None
+    
     for qa in qa_entries:
         for emb in qa["embeddings"]:
             score = util.cos_sim(q_emb, emb).item()
             if score > best_score:
                 best_score = score
                 best_answer = qa["answer"]
+    
     if best_score >= threshold:
         return best_answer
     return None
@@ -167,7 +172,7 @@ def retrieve_context(client_id: str, query: str, top_k: int = 6, max_chars: int 
     Returns a dict with:
       {
         "text": "<concatenated context>",
-        "sources": [{"url":..., "title":...}, ...]
+        "sources": [{"source": "pdf|crawl|qa", "url": "...", "title": "...", "filename": "..."}, ...]
       }
     If no collection or results, returns {"text": "", "sources": []}.
     """
@@ -175,34 +180,57 @@ def retrieve_context(client_id: str, query: str, top_k: int = 6, max_chars: int 
     if coll is None:
         return {"text": "", "sources": []}
 
-    # Chroma query
     try:
         res = coll.query(query_texts=[query], n_results=top_k)
-        docs: List[str] = res.get("documents", [[]])[0] if res.get("documents") else []
-        metas: List[Dict[str, Any]] = res.get("metadatas", [[]])[0] if res.get("metadatas") else []
+        docs = res.get("documents", [[]])[0] if res.get("documents") else []
+        metas = res.get("metadatas", [[]])[0] if res.get("metadatas") else []
     except Exception:
         return {"text": "", "sources": []}
 
     if not docs:
         return {"text": "", "sources": []}
 
-    # Concatenate while respecting max_chars
     buf = []
     total = 0
-    for d in docs:
+    used_metas = []
+    for d, m in zip(docs, metas):
         if not d:
             continue
         if total + len(d) > max_chars:
             remaining = max_chars - total
-            if remaining > 80:  # only add if meaningful space leftover
+            if remaining > 80:
                 buf.append(d[:remaining])
+                used_metas.append(m)
                 total += remaining
             break
         buf.append(d)
+        used_metas.append(m)
         total += len(d)
 
     text = "\n\n---\n\n".join(buf)
-    sources = [{"url": m.get("url", ""), "title": m.get("title", "")} for m in metas[:len(buf)]]
+    sources = []
+    
+    for m in used_metas:
+        source_info = {"source": m.get("source", "unknown")}
+        
+        if m.get("source") == "crawl":
+            source_info.update({
+                "url": m.get("url", ""),
+                "title": m.get("title", "")
+            })
+        elif m.get("source") == "pdf":
+            source_info.update({
+                "filename": m.get("filename", ""),
+                "title": m.get("title", "PDF Document")
+            })
+        elif m.get("source") == "qa":
+            source_info.update({
+                "title": "Custom Q&A",
+                "type": "qa"
+            })
+        
+        sources.append(source_info)
+
     return {"text": text.strip(), "sources": sources}
 
 
@@ -242,20 +270,20 @@ def _generate_llm_response(prompt: str) -> str:
 def chat_with_model(client_id: str, query: str) -> str:
     """
     Main chat entry point:
-      1) Try client-specific custom QA
-      2) Else retrieve from client's collection
+      1) Try client-specific custom QA (priority - direct answers)
+      2) Else retrieve from client's collection (RAG from website/PDF/embedded Q&A)
       3) Else fallback
     """
     q = (query or "").strip()
     if not q:
         return "Please enter a question."
 
-    # 1) Custom QA
+    # 1) Custom QA - Direct answers with semantic matching
     ans = find_custom_answer(client_id, q)
     if ans:
         return ans
 
-    # 2) Retrieval Augmented Generation
+    # 2) Retrieval Augmented Generation - Vector database search
     ctx = retrieve_context(client_id, q, top_k=6, max_chars=1800)
     if ctx["text"]:
         prompt = _build_prompt(client_id, ctx["text"], q)

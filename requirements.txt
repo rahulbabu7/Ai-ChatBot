@@ -13,3 +13,6 @@ bcrypt
 pyjwt
 passlib[bcrypt]
 python-multipart
+celery 
+redis[asyncio]
+PyPDF2
