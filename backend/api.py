@@ -10,6 +10,7 @@ import aiofiles
 import bcrypt
 import requests
 from celery.result import AsyncResult
+import json
 
 # DB helpers
 from backend.db import get_db, remove_domain, get_client_by_domain, register_domain as db_register_domain
@@ -393,27 +394,71 @@ async def get_task_status(task_id: str, client_id: str = Depends(get_client_from
 # ----------------------------
 # UPLOAD QA
 # ----------------------------
+# @app.post("/client/upload-qa/me")
+# async def upload_qa(file: UploadFile = File(...), client_id: str = Depends(get_client_from_header)):
+#     client_dir = os.path.join(CLIENTS_DIR, client_id)
+#     os.makedirs(client_dir, exist_ok=True)
+#     file_path = os.path.join(client_dir, "custom_qa.json")
+
+#     async with aiofiles.open(file_path, "ab") as f:
+#         content = await file.read()
+#         await f.write(content)
+
+#     # Clear cache directly
+#     try:
+#         from llm_service import _load_custom_qa_cached
+#         _load_custom_qa_cached.cache_clear()
+#     except Exception:
+#         pass
+
+#     return {"status": "success", "message": f"Uploaded Q&A for {client_id} - cache refreshed"}
+
+
+
 @app.post("/client/upload-qa/me")
 async def upload_qa(file: UploadFile = File(...), client_id: str = Depends(get_client_from_header)):
     client_dir = os.path.join(CLIENTS_DIR, client_id)
     os.makedirs(client_dir, exist_ok=True)
     file_path = os.path.join(client_dir, "custom_qa.json")
 
-    async with aiofiles.open(file_path, "wb") as f:
-        content = await file.read()
-        await f.write(content)
+    # Read new uploaded JSON
+    content = await file.read()
+    new_data = json.loads(content.decode("utf-8"))
 
-    # Clear cache directly
+    # Ensure it's always a list
+    if not isinstance(new_data, list):
+        new_data = [new_data]
+
+    # Load existing data if file exists
+    if os.path.exists(file_path):
+        async with aiofiles.open(file_path, "r") as f:
+            old_content = await f.read()
+            try:
+                old_data = json.loads(old_content)
+                if not isinstance(old_data, list):
+                    old_data = [old_data]
+            except Exception:
+                old_data = []
+    else:
+        old_data = []
+
+    # Merge
+    merged_data = old_data + new_data
+
+    # Save back
+    async with aiofiles.open(file_path, "w") as f:
+        await f.write(json.dumps(merged_data, indent=2))
+
+    # Clear cache
     try:
         from llm_service import _load_custom_qa_cached
         _load_custom_qa_cached.cache_clear()
     except Exception:
         pass
 
-    return {"status": "success", "message": f"Uploaded Q&A for {client_id} - cache refreshed"}
+    return {"status": "success", "message": f"Uploaded Q&A for {client_id} - merged and cache refreshed"}
 
 
-# Add these endpoints to your api.py file
 
 @app.post("/client/upload-pdf/me")
 async def upload_pdf(file: UploadFile = File(...), client_id: str = Depends(get_client_from_header)):
@@ -423,7 +468,8 @@ async def upload_pdf(file: UploadFile = File(...), client_id: str = Depends(get_
     
     client_dir = os.path.join(CLIENTS_DIR, client_id)
     os.makedirs(client_dir, exist_ok=True)
-    
+    # id=0
+    # id = id+1
     # Save the PDF file
     pdf_path = os.path.join(client_dir, "custom_pdf.pdf")
     async with aiofiles.open(pdf_path, "wb") as f:

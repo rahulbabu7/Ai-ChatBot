@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Globe, Plus, Check, AlertCircle, Copy, ExternalLink, Trash2 } from 'lucide-react';
+import 'assets/scss/style.scss';
 
 const Domain = () => {
   const [domains, setDomains] = useState([]);
@@ -103,101 +104,156 @@ const Domain = () => {
     document.body.appendChild(iframe);
   </script>`;
 
-  if (isLoading) return <div className="flex items-center justify-center min-h-screen">Loading domains...</div>;
-  if (!token) return <div className="text-center mt-10 text-red-600">Please login first to manage your domains.</div>;
+  if (isLoading) return (
+    <div className="container mt-4">
+      <div className="text-center">
+        <div className="spinner-border text-primary" role="status">
+          <span className="visually-hidden">Loading...</span>
+        </div>
+        <p className="mt-2">Loading domains...</p>
+      </div>
+    </div>
+  );
+
+  if (!token) return (
+    <div className="container mt-4">
+      <div className="alert alert-danger text-center">
+        Please login first to manage your domains.
+      </div>
+    </div>
+  );
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="bg-white rounded-lg shadow-lg">
-        {/* Header */}
-        <div className="px-4 py-4 border-b border-gray-200 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Globe className="w-6 h-6 text-blue-600" />
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">My Domains</h2>
-              <p className="text-sm text-gray-600">Manage domains where your chatbot will appear</p>
-            </div>
+    <div className="container mt-4">
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <div className="d-flex align-items-center">
+          <Globe className="me-2" size={24} style={{ color: '#0d6efd' }} />
+          <div>
+            <h2 className="mb-0">My Domains</h2>
+            <p className="text-muted mb-0">Manage domains where your chatbot will appear</p>
           </div>
-          <button onClick={() => setShowIntegrationCode(!showIntegrationCode)} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
-            <ExternalLink className="w-4 h-4" />
-            Integration Code
-          </button>
         </div>
+        <button 
+          className="btn btn-success d-flex align-items-center"
+          onClick={() => setShowIntegrationCode(!showIntegrationCode)}
+        >
+          <ExternalLink className="me-2" size={16} />
+          Integration Code
+        </button>
+      </div>
 
-        {/* Status Message */}
-        {message.text && (
-          <div className={`mx-6 mt-4 p-3 rounded-lg flex items-center gap-2 ${message.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
-            {message.type === 'success' ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-            {message.text}
+      {/* Status Message */}
+      {message.text && (
+        <div className={`alert ${message.type === 'success' ? 'alert-success' : 'alert-danger'} d-flex align-items-center`}>
+          {message.type === 'success' ? 
+            <Check className="me-2" size={16} /> : 
+            <AlertCircle className="me-2" size={16} />
+          }
+          {message.text}
+        </div>
+      )}
+
+      {/* Integration Code Section */}
+      {showIntegrationCode && (
+        <div className="card p-4 shadow-sm mb-4">
+          <h5 className="card-title">Integration Code</h5>
+          <div className="d-flex justify-content-between align-items-center mb-2">
+            <label className="form-label mb-0">Add this to your website</label>
+            <button 
+              className="btn btn-outline-primary btn-sm d-flex align-items-center"
+              onClick={() => copyToClipboard(integrationCode)}
+            >
+              <Copy className="me-1" size={14} /> Copy
+            </button>
           </div>
-        )}
+          <pre className="bg-dark text-success p-3 rounded" style={{ fontSize: '0.8rem', overflowX: 'auto' }}>
+            {integrationCode}
+          </pre>
+        </div>
+      )}
 
-        {/* Integration Code */}
-        {showIntegrationCode && (
-          <div className="px-4 py-4 bg-gray-50 border-b border-gray-200">
-            <h3 className="text-lg font-medium text-gray-900 mb-3">Integration Code</h3>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700">Add this to your website</label>
-              <button onClick={() => copyToClipboard(integrationCode)} className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1">
-                <Copy className="w-3 h-3" /> Copy
-              </button>
-            </div>
-            <pre className="bg-gray-900 text-green-400 p-3 rounded text-xs overflow-x-auto">{integrationCode}</pre>
-          </div>
-        )}
-
-        {/* Add Domain */}
-        <div className="px-4 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900 mb-3">Add New Domain</h3>
-          <div className="flex gap-3">
+      {/* Add Domain Section */}
+      <div className="card p-4 shadow-sm mb-4">
+        <h5 className="card-title">Add New Domain</h5>
+        <div className="row">
+          <div className="col-md-8">
             <input
               type="text"
+              className="form-control"
               value={newDomain}
               onChange={(e) => setNewDomain(e.target.value)}
               placeholder="yourdomain.com"
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
               onKeyPress={(e) => e.key === 'Enter' && addDomain()}
             />
-            <button onClick={addDomain} disabled={!newDomain.trim() || isAdding} className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300">
-              {isAdding ? 'Adding...' : <><Plus className="w-4 h-4" /> Add Domain</>}
+          </div>
+          <div className="col-md-4">
+            <button 
+              className="btn btn-primary w-100 d-flex align-items-center justify-content-center"
+              onClick={addDomain} 
+              disabled={!newDomain.trim() || isAdding}
+            >
+              {isAdding ? (
+                <>
+                  <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <Plus className="me-2" size={16} />
+                  Add Domain
+                </>
+              )}
             </button>
           </div>
         </div>
+      </div>
 
-        {/* Domains List */}
-        <div className="px-4 py-4">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Registered Domains</h3>
-          {domains.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <Globe className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p className="text-lg font-medium">No domains registered yet</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {domains.map((domain, i) => (
-                <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                      <Globe className="w-5 h-5 text-blue-600" />
+      {/* Domains List Section */}
+      <div className="card p-4 shadow-sm">
+        <h5 className="card-title">Registered Domains</h5>
+        {domains.length === 0 ? (
+          <div className="text-center py-5">
+            <Globe className="text-muted mb-3" size={48} />
+            <h6 className="text-muted">No domains registered yet</h6>
+            <p className="text-muted">Add your first domain to get started with the chatbot integration.</p>
+          </div>
+        ) : (
+          <div className="row">
+            {domains.map((domain, i) => (
+              <div key={i} className="col-md-6 mb-3">
+                <div className="card h-100 border">
+                  <div className="card-body">
+                    <div className="d-flex align-items-start justify-content-between">
+                      <div className="d-flex align-items-center flex-grow-1">
+                        <div className="bg-primary bg-opacity-10 rounded-circle p-2 me-3">
+                          <Globe className="text-primary" size={20} />
+                        </div>
+                        <div className="flex-grow-1">
+                          <h6 className="card-title mb-1">{domain.domain}</h6>
+                          <small className="text-muted">
+                            Registered on {new Date(domain.created_at).toLocaleDateString()}
+                          </small>
+                        </div>
+                      </div>
+                      <div className="d-flex align-items-center gap-2">
+                        <span className="badge bg-success d-flex align-items-center">
+                          <Check className="me-1" size={12} /> Active
+                        </span>
+                        <button 
+                          className="btn btn-outline-danger btn-sm"
+                          onClick={() => deleteDomain(domain.domain)}
+                          title="Delete domain"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900">{domain.domain}</h4>
-                      <p className="text-sm text-gray-500">Registered on {new Date(domain.created_at).toLocaleDateString()}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
-                      <Check className="w-3 h-3" /> Active
-                    </span>
-                    <button onClick={() => deleteDomain(domain.domain)} className="text-red-600 hover:text-red-800 p-1 rounded border border-red-200" title="Delete domain">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

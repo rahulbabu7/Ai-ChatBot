@@ -312,14 +312,14 @@ const Dashboard = () => {
   return (
     <div className="container mt-4">
       {/* Top actions */}
-      <div className="mb-3">
+      {/* <div className="mb-3">
         <button className="btn btn-secondary" onClick={() => navigate('/dashboard-admin')}>
           ← Back to Admin Dashboard
         </button>
         <button className="btn btn-info ms-2" onClick={refreshTasks}>
           🔄 Refresh Tasks
         </button>
-      </div>
+      </div>*/}
 
       <h2 className="mb-4">Manage Client: {clientName}</h2>
 
@@ -526,7 +526,7 @@ const Dashboard = () => {
           </div>
         </div>
       )}
-
+      
       {/* Logs */}
       <div className="card p-4 shadow-sm">
         <h5 className="card-title">Logs & Status</h5>
