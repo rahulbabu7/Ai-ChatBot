@@ -19,13 +19,12 @@ const Chatbot = () => {
         // Get current domain
         const params = new URLSearchParams(window.location.search);
         const clientDomain = params.get("domain");
-        const currentDomain = window.location.hostname;
+        // const currentDomain = window.location.hostname;
         // console.log("Detecting domain:", currentDomain);
         console.log("Detecting domain:", clientDomain);
         // Call backend to lookup client by domain
         const response = await fetch(
-          // `http://localhost:8000/client/lookup-by-domain?domain=${encodeURIComponent(clientDomain)}`,
-          `http://localhost:8000/client/lookup-by-domain?domain=${encodeURIComponent(currentDomain)}`,
+          `http://localhost:8000/client/lookup-by-domain?domain=${encodeURIComponent(clientDomain)}`,
           
         );
 
