@@ -17,12 +17,15 @@ const Chatbot = () => {
         setIsLoading(true);
 
         // Get current domain
-        const currentDomain = window.location.hostname;
-        console.log("Detecting domain:", currentDomain);
-
+        const params = new URLSearchParams(window.location.search);
+        const clientDomain = params.get("domain");
+        // const currentDomain = window.location.hostname;
+        // console.log("Detecting domain:", currentDomain);
+        console.log("Detecting domain:", clientDomain);
         // Call backend to lookup client by domain
         const response = await fetch(
-          `http://localhost:8000/client/lookup-by-domain?domain=${encodeURIComponent(currentDomain)}`,
+          `http://localhost:8000/client/lookup-by-domain?domain=${encodeURIComponent(clientDomain)}`,
+          
         );
 
         if (!response.ok) {
@@ -175,8 +178,8 @@ const Chatbot = () => {
     <div
       style={{ position: "fixed", bottom: "20px", right: "20px", zIndex: 1000 }}
     >
-      {/* Client name badge (optional) */}
-      {clientName && !isOpen && (
+      {/* Client name badge (only show when chat is closed) */}
+      {/* {clientName && !isOpen && (
         <div
           style={{
             backgroundColor: "white",
@@ -190,9 +193,8 @@ const Chatbot = () => {
             border: "1px solid #e5e7eb",
           }}
         >
-          💬 {clientName} Support
         </div>
-      )}
+      )}*/}
 
       {/* Chat Window */}
       {isOpen && (
@@ -203,35 +205,37 @@ const Chatbot = () => {
         />
       )}
 
-      {/* Chat Button */}
-      <button
-        onClick={handleToggleChat}
-        style={{
-          width: "56px",
-          height: "56px",
-          backgroundColor: "#6366f1",
-          border: "none",
-          borderRadius: "50%",
-          color: "white",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
-          transition: "all 0.2s ease",
-        }}
-        onMouseOver={(e) => {
-          e.target.style.backgroundColor = "#5856f3";
-          e.target.style.transform = "scale(1.05)";
-        }}
-        onMouseOut={(e) => {
-          e.target.style.backgroundColor = "#6366f1";
-          e.target.style.transform = "scale(1)";
-        }}
-        title={`Chat with ${clientName || "Support"}`}
-      >
-        <MessageCircle size={24} />
-      </button>
+      {/* Chat Button - Only show when chat window is closed */}
+      {!isOpen && (
+        <button
+          onClick={handleToggleChat}
+          style={{
+            width: "56px",
+            height: "56px",
+            backgroundColor: "#6366f1",
+            border: "none",
+            borderRadius: "50%",
+            color: "white",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 4px 12px rgba(99, 102, 241, 0.4)",
+            transition: "all 0.2s ease",
+          }}
+          onMouseOver={(e) => {
+            e.target.style.backgroundColor = "#5856f3";
+            e.target.style.transform = "scale(1.05)";
+          }}
+          onMouseOut={(e) => {
+            e.target.style.backgroundColor = "#6366f1";
+            e.target.style.transform = "scale(1)";
+          }}
+          title={`Chat with ${clientName || "Support"}`}
+        >
+          <MessageCircle size={24} />
+        </button>
+      )}
     </div>
   );
 };
