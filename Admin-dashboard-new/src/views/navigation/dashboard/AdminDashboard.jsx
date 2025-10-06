@@ -1,8 +1,7 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import "assets/scss/style.scss"; // use the global SCSS
-
-const API = "http://localhost:8000";
+import { API_URL } from 'Admin-dashboard-new/src/config.js';
 
 const AdminDashboard = () => {
   const [clients, setClients] = useState([]);
@@ -13,7 +12,7 @@ const AdminDashboard = () => {
   // Fetch existing clients
   const fetchClients = async () => {
     try {
-      const res = await fetch(`${API}/admin/clients`);
+      const res = await fetch(`${API_URL}/admin/clients`);
       const data = await res.json();
       setClients(data.clients || []);
     } catch (err) {
@@ -28,7 +27,7 @@ const AdminDashboard = () => {
   const addClient = async () => {
     if (!newClient.trim()) return;
     try {
-      const res = await fetch(`${API}/admin/add-client`, {
+      const res = await fetch(`${API_URL}/admin/add-client`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ client_id: newClient }),
