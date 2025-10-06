@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Send, X, User, Bot } from "lucide-react";
-
+import { API_URL } from './config';
 const ChatbotWindow = ({ onClose, clientId, chatbotKey }) => {
   const [messages, setMessages] = useState([
     {
@@ -46,7 +46,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey }) => {
 
     try {
       const res = await fetch(
-        `http://localhost:8000/client/chat/${clientId}`,
+        `${API_URL}/client/chat/${clientId}`,
         {
           method: "POST",
           headers: {

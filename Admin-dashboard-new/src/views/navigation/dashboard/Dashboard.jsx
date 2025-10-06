@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import 'assets/scss/style.scss';
-
-const API = 'http://localhost:8000';
+import { API_URL } from 'Admin-dashboard-new/src/config.js';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -39,7 +38,7 @@ const Dashboard = () => {
     }
     const fetchClient = async () => {
       try {
-        const res = await fetch(`${API}/client/me`, {
+        const res = await fetch(`${API_URL}/client/me`, {
           headers: { 'x-token': token }
         });
         if (!res.ok) throw new Error('Failed to fetch client');
@@ -62,7 +61,7 @@ const Dashboard = () => {
 
   const fetchClientTasks = async () => {
     try {
-      const res = await fetch(`${API}/client/me/tasks`, {
+      const res = await fetch(`${API_URL}/client/me/tasks`, {
         headers: { 'x-token': token }
       });
       if (res.ok) {
@@ -85,7 +84,7 @@ const Dashboard = () => {
       if (!taskId) return;
 
       try {
-        const res = await fetch(`${API}/client/me/task-status/${taskId}`, {
+        const res = await fetch(`${API_URL}/client/me/task-status/${taskId}`, {
           headers: { 'x-token': token }
         });
 
@@ -124,7 +123,7 @@ const Dashboard = () => {
     setBusy(true);
     setLog(`Calling ${url} ...`);
     try {
-      const res = await fetch(`${API}${url}`, {
+      const res = await fetch(`${API_URL}${url}`, {
         ...options,
         headers: { ...(options.headers || {}), 'x-token': token }
       });

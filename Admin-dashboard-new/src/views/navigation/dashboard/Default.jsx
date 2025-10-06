@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import axios from "axios";
+import { API_URL } from 'Admin-dashboard-new/src/config.js';
 
 // react-bootstrap
 import Col from "react-bootstrap/Col";
@@ -26,7 +27,7 @@ export default function DefaultPage() {
     if (!token) return;
 
     axios
-      .get(`http://localhost:8000/client/sessions/me`, {
+      .get(`${API_URL}/client/sessions/me`, {
         headers: { "x-token": token },
       })
       .then((res) => {
@@ -48,7 +49,7 @@ export default function DefaultPage() {
     setLoading(true);
     axios
       .get(
-        `http://localhost:8000/client/chats/me?session_id=${selectedSession}`, // ✅ match backend
+        `${API_URL}/client/chats/me?session_id=${selectedSession}`, // ✅ match backend
         { headers: { "x-token": token } }
       )
       .then((res) => setChats(res.data.chats || []))

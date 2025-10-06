@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Globe, Plus, Check, AlertCircle, Copy, ExternalLink, Trash2 } from 'lucide-react';
 import 'assets/scss/style.scss';
-
+import { API_URL } from 'Admin-dashboard-new/src/config.js';
 const Domain = () => {
   const [domains, setDomains] = useState([]);
   const [newDomain, setNewDomain] = useState('');
@@ -25,7 +25,7 @@ const Domain = () => {
   const fetchClientDomains = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/client/domains/me', {
+      const res = await fetch('${API_URL}/client/domains/me', {
         headers: { 'x-token': token }
       });
       if (!res.ok) throw new Error('Failed to fetch domains');
@@ -42,7 +42,7 @@ const Domain = () => {
     if (!newDomain.trim()) return;
     setIsAdding(true);
     try {
-      const res = await fetch('http://localhost:8000/client/register-my-domains/me', {
+      const res = await fetch('${API_URL}/client/register-my-domains/me', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-token': token },
         body: JSON.stringify([newDomain.trim()])
@@ -68,7 +68,7 @@ const Domain = () => {
     if (!window.confirm(`Are you sure you want to delete "${domainName}"?`)) return;
 
     try {
-      const res = await fetch(`http://localhost:8000/client/domains/me/${domainName}`, {
+      const res = await fetch(`${API_URL}/client/domains/me/${domainName}`, {
         method: 'DELETE',
         headers: { 'x-token': token }
       });
