@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { MessageCircle } from "lucide-react";
 import ChatbotWindow from "./ChatbotWindow";
-import { API_URL } from './config';
+import { API_URL } from "../config.js";
 const Chatbot = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [clientId, setClientId] = useState("");
@@ -9,8 +9,7 @@ const Chatbot = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [clientName, setClientName] = useState("");
-  
-  
+
   // Auto-detect domain and fetch client credentials
   useEffect(() => {
     const fetchClientCredentials = async () => {
@@ -26,7 +25,6 @@ const Chatbot = () => {
         // Call backend to lookup client by domain
         const response = await fetch(
           `${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(clientDomain)}`,
-          
         );
 
         if (!response.ok) {

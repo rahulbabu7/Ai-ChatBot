@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Globe, Plus, Check, AlertCircle, Copy, ExternalLink, Trash2 } from 'lucide-react';
 import 'assets/scss/style.scss';
-import { API_URL } from 'Admin-dashboard-new/src/config.js';
+import { API_URL } from '../../../config';
 const Domain = () => {
   const [domains, setDomains] = useState([]);
   const [newDomain, setNewDomain] = useState('');
@@ -104,24 +104,24 @@ const Domain = () => {
     document.body.appendChild(iframe);
   </script>`;
 
-  if (isLoading) return (
-    <div className="container mt-4">
-      <div className="text-center">
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Loading...</span>
+  if (isLoading)
+    return (
+      <div className="container mt-4">
+        <div className="text-center">
+          <div className="spinner-border text-primary" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
+          <p className="mt-2">Loading domains...</p>
         </div>
-        <p className="mt-2">Loading domains...</p>
       </div>
-    </div>
-  );
+    );
 
-  if (!token) return (
-    <div className="container mt-4">
-      <div className="alert alert-danger text-center">
-        Please login first to manage your domains.
+  if (!token)
+    return (
+      <div className="container mt-4">
+        <div className="alert alert-danger text-center">Please login first to manage your domains.</div>
       </div>
-    </div>
-  );
+    );
 
   return (
     <div className="container mt-4">
@@ -133,10 +133,7 @@ const Domain = () => {
             <p className="text-muted mb-0">Manage domains where your chatbot will appear</p>
           </div>
         </div>
-        <button 
-          className="btn btn-success d-flex align-items-center"
-          onClick={() => setShowIntegrationCode(!showIntegrationCode)}
-        >
+        <button className="btn btn-success d-flex align-items-center" onClick={() => setShowIntegrationCode(!showIntegrationCode)}>
           <ExternalLink className="me-2" size={16} />
           Integration Code
         </button>
@@ -145,10 +142,7 @@ const Domain = () => {
       {/* Status Message */}
       {message.text && (
         <div className={`alert ${message.type === 'success' ? 'alert-success' : 'alert-danger'} d-flex align-items-center`}>
-          {message.type === 'success' ? 
-            <Check className="me-2" size={16} /> : 
-            <AlertCircle className="me-2" size={16} />
-          }
+          {message.type === 'success' ? <Check className="me-2" size={16} /> : <AlertCircle className="me-2" size={16} />}
           {message.text}
         </div>
       )}
@@ -159,10 +153,7 @@ const Domain = () => {
           <h5 className="card-title">Integration Code</h5>
           <div className="d-flex justify-content-between align-items-center mb-2">
             <label className="form-label mb-0">Add this to your website</label>
-            <button 
-              className="btn btn-outline-primary btn-sm d-flex align-items-center"
-              onClick={() => copyToClipboard(integrationCode)}
-            >
+            <button className="btn btn-outline-primary btn-sm d-flex align-items-center" onClick={() => copyToClipboard(integrationCode)}>
               <Copy className="me-1" size={14} /> Copy
             </button>
           </div>
@@ -187,9 +178,9 @@ const Domain = () => {
             />
           </div>
           <div className="col-md-4">
-            <button 
+            <button
               className="btn btn-primary w-100 d-flex align-items-center justify-content-center"
-              onClick={addDomain} 
+              onClick={addDomain}
               disabled={!newDomain.trim() || isAdding}
             >
               {isAdding ? (
@@ -230,20 +221,14 @@ const Domain = () => {
                         </div>
                         <div className="flex-grow-1">
                           <h6 className="card-title mb-1">{domain.domain}</h6>
-                          <small className="text-muted">
-                            Registered on {new Date(domain.created_at).toLocaleDateString()}
-                          </small>
+                          <small className="text-muted">Registered on {new Date(domain.created_at).toLocaleDateString()}</small>
                         </div>
                       </div>
                       <div className="d-flex align-items-center gap-2">
                         <span className="badge bg-success d-flex align-items-center">
                           <Check className="me-1" size={12} /> Active
                         </span>
-                        <button 
-                          className="btn btn-outline-danger btn-sm"
-                          onClick={() => deleteDomain(domain.domain)}
-                          title="Delete domain"
-                        >
+                        <button className="btn btn-outline-danger btn-sm" onClick={() => deleteDomain(domain.domain)} title="Delete domain">
                           <Trash2 size={14} />
                         </button>
                       </div>

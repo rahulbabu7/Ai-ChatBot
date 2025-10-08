@@ -1,13 +1,13 @@
-import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
-import "assets/scss/style.scss"; // use the global SCSS
-import { API_URL } from 'Admin-dashboard-new/src/config.js';
+import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import 'assets/scss/style.scss'; // use the global SCSS
+import { API_URL } from '../../../config';
 
 const AdminDashboard = () => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [newClient, setNewClient] = useState("");
-  const [log, setLog] = useState("");
+  const [newClient, setNewClient] = useState('');
+  const [log, setLog] = useState('');
 
   // Fetch existing clients
   const fetchClients = async () => {
@@ -16,8 +16,8 @@ const AdminDashboard = () => {
       const data = await res.json();
       setClients(data.clients || []);
     } catch (err) {
-      console.error("Error fetching clients:", err);
-      setLog("❌ Failed to fetch clients.");
+      console.error('Error fetching clients:', err);
+      setLog('❌ Failed to fetch clients.');
     } finally {
       setLoading(false);
     }
@@ -28,14 +28,14 @@ const AdminDashboard = () => {
     if (!newClient.trim()) return;
     try {
       const res = await fetch(`${API_URL}/admin/add-client`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: newClient }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: newClient })
       });
       const data = await res.json();
-      setLog(data.message || "✅ Client added");
+      setLog(data.message || '✅ Client added');
       setClients(data.clients || []);
-      setNewClient("");
+      setNewClient('');
     } catch (err) {
       setLog(`❌ Error: ${err.message || err}`);
     }
@@ -73,15 +73,7 @@ const AdminDashboard = () => {
           </div>
 
           {/* Logs */}
-          {log && (
-            <p
-              className={`${
-                log.startsWith("✅") ? "text-success" : log.startsWith("❌") ? "text-danger" : ""
-              }`}
-            >
-              {log}
-            </p>
-          )}
+          {log && <p className={`${log.startsWith('✅') ? 'text-success' : log.startsWith('❌') ? 'text-danger' : ''}`}>{log}</p>}
 
           {/* Client List */}
           {loading ? (

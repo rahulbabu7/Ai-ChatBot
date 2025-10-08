@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Send, X, User, Bot } from "lucide-react";
-import { API_URL } from './config';
+import { API_URL } from "../config";
 const ChatbotWindow = ({ onClose, clientId, chatbotKey }) => {
   const [messages, setMessages] = useState([
     {
@@ -45,20 +45,17 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey }) => {
     setIsTyping(true);
 
     try {
-      const res = await fetch(
-        `${API_URL}/client/chat/${clientId}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-chatbot-key": chatbotKey,
-          },
-          body: JSON.stringify({
-            session_id: sessionId,
-            message: userInput,
-          }),
-        }
-      );
+      const res = await fetch(`${API_URL}/client/chat/${clientId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-chatbot-key": chatbotKey,
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          message: userInput,
+        }),
+      });
 
       if (!res.ok) {
         throw new Error(`Backend error: ${res.status}`);
@@ -214,8 +211,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey }) => {
                 width: "28px",
                 height: "28px",
                 borderRadius: "50%",
-                backgroundColor:
-                  msg.sender === "user" ? "#e5e7eb" : "#6366f1",
+                backgroundColor: msg.sender === "user" ? "#e5e7eb" : "#6366f1",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -233,27 +229,20 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey }) => {
                 maxWidth: "250px",
                 display: "flex",
                 flexDirection: "column",
-                alignItems:
-                  msg.sender === "user" ? "flex-end" : "flex-start",
+                alignItems: msg.sender === "user" ? "flex-end" : "flex-start",
               }}
             >
               <div
                 style={{
                   padding: "10px 14px",
                   borderRadius: "16px",
-                  backgroundColor:
-                    msg.sender === "user" ? "#10b981" : "white",
+                  backgroundColor: msg.sender === "user" ? "#10b981" : "white",
                   color: msg.sender === "user" ? "white" : "#1f2937",
                   fontSize: "14px",
                   lineHeight: "1.4",
                   boxShadow:
-                    msg.sender === "bot"
-                      ? "0 1px 2px rgba(0,0,0,0.1)"
-                      : "none",
-                  border:
-                    msg.sender === "bot"
-                      ? "1px solid #e5e7eb"
-                      : "none",
+                    msg.sender === "bot" ? "0 1px 2px rgba(0,0,0,0.1)" : "none",
+                  border: msg.sender === "bot" ? "1px solid #e5e7eb" : "none",
                 }}
               >
                 {msg.text}
@@ -363,21 +352,23 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey }) => {
               border: "none",
               borderRadius: "20px",
               color: input.trim() && !isTyping ? "white" : "#9ca3af",
-              cursor:
-                input.trim() && !isTyping ? "pointer" : "not-allowed",
+              cursor: input.trim() && !isTyping ? "pointer" : "not-allowed",
             }}
           >
             <Send size={14} />
             <span style={{ fontSize: "12px", fontWeight: 500 }}>Send</span>
           </button>
         </div>
-        <p style={{ 
-          fontSize: '12px', 
-          color: '#6b7280', 
-          margin: '6px 0 0 0', 
-          textAlign: 'center' 
-          }}> 
-          Press Enter to send, Shift+Enter for new line </p>
+        <p
+          style={{
+            fontSize: "12px",
+            color: "#6b7280",
+            margin: "6px 0 0 0",
+            textAlign: "center",
+          }}
+        >
+          Press Enter to send, Shift+Enter for new line{" "}
+        </p>
       </div>
 
       <style>

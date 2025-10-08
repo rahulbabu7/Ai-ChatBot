@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import axios from "axios";
-import { API_URL } from 'Admin-dashboard-new/src/config.js';
+import { API_URL } from '../../../config';
 
 // react-bootstrap
 import Col from "react-bootstrap/Col";

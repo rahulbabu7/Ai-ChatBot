@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import 'assets/scss/style.scss';
-import { API_URL } from 'Admin-dashboard-new/src/config.js';
+import { API_URL } from '../../../config';
 
 const Dashboard = () => {
   const navigate = useNavigate();
