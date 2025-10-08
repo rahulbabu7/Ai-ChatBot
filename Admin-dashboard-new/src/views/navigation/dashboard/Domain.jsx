@@ -96,19 +96,21 @@ const Domain = () => {
   };
 
   const integrationCode = `<!-- Add this to your website -->
-  <div id="chatbot-container"></div>
   <script>
-    const iframe = document.createElement('iframe');
-    iframe.src = '';
-    iframe.style.cssText = 'position:fixed;bottom:20px;right:20px;width:400px;height:600px;border:none;z-index:1000;';
-    document.body.appendChild(iframe);
-  </script>`;
+    (function() {
+      const domain = encodeURIComponent(window.location.hostname);
+      const iframe = document.createElement("iframe");
+      iframe.src = "https://aichat360.kochi.digital?domain=" + domain;
+      iframe.style.cssText = "position:fixed; bottom:20px; right:20px; width:400px; height:600px; border:none; z-index:999999;";
+      document.body.appendChild(iframe);
+    })();
+  </script>
+  `;
+  const simpleIntegrationCode = `<!-- Add this to your website  replace yourDomain with the correct domain -->
 
-  const simpleIntegrationCode = `<!-- Add this to your website -->
-replace yourDomain with the correct domain
 
 <iframe
-  src="https://chatbot-demo-2udd.onrender.com?domain=yourDomain"
+  src="https://aichat360.kochi.digital/?domain=yourDomain"
   style="position: fixed; bottom: 20px; right: 20px; width: 400px; height: 600px; border: none; z-index: 999999;">
 </iframe>`;
 
