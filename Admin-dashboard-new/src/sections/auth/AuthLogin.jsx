@@ -5,13 +5,13 @@ import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
 import MainCard from 'components/MainCard';
 
+import { API_URL } from '../../config';
 export default function AuthLogin({ className }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(false);
   const [log, setLog] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const API = 'http://localhost:8000';
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
@@ -24,12 +24,12 @@ export default function AuthLogin({ className }) {
 
     setIsLoading(true);
     setLog('Logging in...');
-
+    console.log(API_URL);
     try {
-      const res = await fetch(`${API}/auth/login`, {
+      const res = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password })
       });
 
       const data = await res.json();
@@ -64,30 +64,15 @@ export default function AuthLogin({ className }) {
           <h4 className={`text-center f-w-500 mt-4 mb-3 ${className}`}>Login</h4>
 
           <Form.Group className="mb-3" controlId="formUsername">
-            <Form.Control
-              type="text"
-              placeholder="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
+            <Form.Control type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
           </Form.Group>
 
           <Form.Group className="mb-3" controlId="formPassword">
-            <Form.Control
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <Form.Control type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </Form.Group>
 
           <div className="d-flex justify-content-between align-items-center mb-3">
-            <Form.Check
-              type="checkbox"
-              label="Remember me"
-              checked={remember}
-              onChange={() => setRemember(!remember)}
-            />
+            <Form.Check type="checkbox" label="Remember me" checked={remember} onChange={() => setRemember(!remember)} />
             <Link to="/forgot-password" className="text-primary">
               Forgot Password?
             </Link>
@@ -97,18 +82,10 @@ export default function AuthLogin({ className }) {
             {isLoading ? 'Logging in...' : 'Login'}
           </Button>
 
-          {log && (
-            <p
-              className={`mt-3 text-center ${
-                log.startsWith('✅') ? 'text-success' : 'text-danger'
-              }`}
-            >
-              {log}
-            </p>
-          )}
+          {log && <p className={`mt-3 text-center ${log.startsWith('✅') ? 'text-success' : 'text-danger'}`}>{log}</p>}
 
           <div className="mt-3 text-center">
-            New Client? 
+            New Client?
             <Link to="/register" className="d-block">
               Register Here
             </Link>

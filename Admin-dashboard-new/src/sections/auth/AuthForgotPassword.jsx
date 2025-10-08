@@ -8,7 +8,7 @@ import Form from 'react-bootstrap/Form';
 // project-imports
 import MainCard from 'components/MainCard';
 
-const API = "http://localhost:8000"; // Change if needed
+import { API_URL } from '../../config';
 
 export default function AuthForgotPassword({ link }) {
   const navigate = useNavigate();
@@ -24,7 +24,7 @@ export default function AuthForgotPassword({ link }) {
     }
 
     try {
-      const res = await fetch(`${API}/auth/forgot-password`, {
+      const res = await fetch(`${API_URL}/auth/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),

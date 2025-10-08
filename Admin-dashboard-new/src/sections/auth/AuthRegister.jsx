@@ -9,7 +9,7 @@ import Form from 'react-bootstrap/Form';
 // project-imports
 import MainCard from 'components/MainCard';
 
-const API = "http://localhost:8000"; // Change this to your API if needed
+import { API_URL } from '../../config';
 
 export default function AuthRegister({ link }) {
   const navigate = useNavigate();
@@ -36,9 +36,9 @@ export default function AuthRegister({ link }) {
     }
 
     try {
-      const res = await fetch(`${API}/auth/signup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch(`${API_URL}/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: 'client', name, username, password, mobile, email })
       });
 
@@ -60,70 +60,42 @@ export default function AuthRegister({ link }) {
       <h4 className="text-center f-w-500 mt-4 mb-3">Sign up</h4>
       <Form onSubmit={handleSignup}>
         <Form.Group className="mb-3">
-          <Form.Control
-            type="text"
-            name="name"
-            placeholder="Full Name"
-            value={formData.name}
-            onChange={handleChange}
-          />
+          <Form.Control type="text" name="name" placeholder="Full Name" value={formData.name} onChange={handleChange} />
         </Form.Group>
 
         <Form.Group className="mb-3">
-          <Form.Control
-            type="text"
-            name="username"
-            placeholder="Username"
-            value={formData.username}
-            onChange={handleChange}
-          />
+          <Form.Control type="text" name="username" placeholder="Username" value={formData.username} onChange={handleChange} />
         </Form.Group>
 
         <Form.Group className="mb-3">
-          <Form.Control
-            type="password"
-            name="password"
-            placeholder="Password"
-            value={formData.password}
-            onChange={handleChange}
-          />
+          <Form.Control type="password" name="password" placeholder="Password" value={formData.password} onChange={handleChange} />
         </Form.Group>
 
         <Form.Group className="mb-3">
-          <Form.Control
-            type="tel"
-            name="mobile"
-            placeholder="Mobile Number"
-            value={formData.mobile}
-            onChange={handleChange}
-          />
+          <Form.Control type="tel" name="mobile" placeholder="Mobile Number" value={formData.mobile} onChange={handleChange} />
         </Form.Group>
 
         <Form.Group className="mb-3">
-          <Form.Control
-            type="email"
-            name="email"
-            placeholder="Email"
-            value={formData.email}
-            onChange={handleChange}
-          />
+          <Form.Control type="email" name="email" placeholder="Email" value={formData.email} onChange={handleChange} />
         </Form.Group>
 
         <div className="text-center mt-3">
-          <Button type="submit" className="shadow px-sm-4">Sign up</Button>
+          <Button type="submit" className="shadow px-sm-4">
+            Sign up
+          </Button>
         </div>
 
         {log && (
-          <p
-            className="mt-3 text-center"
-            style={{ color: log.startsWith('✅') ? '#16a34a' : '#e11d48' }}
-          >
+          <p className="mt-3 text-center" style={{ color: log.startsWith('✅') ? '#16a34a' : '#e11d48' }}>
             {log}
           </p>
         )}
 
         <p className="mt-3 text-center">
-          Already have an account? <Link to={link || '/login'} className="link-primary">Login</Link>
+          Already have an account?{' '}
+          <Link to={link || '/login'} className="link-primary">
+            Login
+          </Link>
         </p>
       </Form>
     </MainCard>

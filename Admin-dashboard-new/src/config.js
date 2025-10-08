@@ -3,7 +3,7 @@
 export const APP_DEFAULT_PATH = '/dashboard/default';
 export const DRAWER_WIDTH = 260;
 export const APP_NAME = 'SmartAssist AI';
-export const API_URL = import.meta.env.BACKEND_API_URL;
+export const API_URL = import.meta.env.VITE_BACKEND_API_URL;
 
 export let MenuOrientation;
 

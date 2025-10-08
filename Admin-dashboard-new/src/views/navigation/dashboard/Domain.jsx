@@ -25,7 +25,7 @@ const Domain = () => {
   const fetchClientDomains = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('${API_URL}/client/domains/me', {
+      const res = await fetch(`${API_URL}/client/domains/me`, {
         headers: { 'x-token': token }
       });
       if (!res.ok) throw new Error('Failed to fetch domains');
@@ -42,7 +42,7 @@ const Domain = () => {
     if (!newDomain.trim()) return;
     setIsAdding(true);
     try {
-      const res = await fetch('${API_URL}/client/register-my-domains/me', {
+      const res = await fetch(`${API_URL}/client/register-my-domains/me`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-token': token },
         body: JSON.stringify([newDomain.trim()])
@@ -99,10 +99,18 @@ const Domain = () => {
   <div id="chatbot-container"></div>
   <script>
     const iframe = document.createElement('iframe');
-    iframe.src = 'http://localhost:3000/chatbot';
+    iframe.src = '';
     iframe.style.cssText = 'position:fixed;bottom:20px;right:20px;width:400px;height:600px;border:none;z-index:1000;';
     document.body.appendChild(iframe);
   </script>`;
+
+  const simpleIntegrationCode = `<!-- Add this to your website -->
+replace yourDomain with the correct domain
+
+<iframe
+  src="https://chatbot-demo-2udd.onrender.com?domain=yourDomain"
+  style="position: fixed; bottom: 20px; right: 20px; width: 400px; height: 600px; border: none; z-index: 999999;">
+</iframe>`;
 
   if (isLoading)
     return (
@@ -159,6 +167,22 @@ const Domain = () => {
           </div>
           <pre className="bg-dark text-success p-3 rounded" style={{ fontSize: '0.8rem', overflowX: 'auto' }}>
             {integrationCode}
+          </pre>
+        </div>
+      )}
+
+      {/* Integration Code Section */}
+      {showIntegrationCode && (
+        <div className="card p-4 shadow-sm mb-4">
+          <h5 className="card-title">Integration Code</h5>
+          <div className="d-flex justify-content-between align-items-center mb-2">
+            <label className="form-label mb-0">Add this to your website</label>
+            <button className="btn btn-outline-primary btn-sm d-flex align-items-center" onClick={() => copyToClipboard(integrationCode)}>
+              <Copy className="me-1" size={14} /> Copy
+            </button>
+          </div>
+          <pre className="bg-dark text-success p-3 rounded" style={{ fontSize: '0.8rem', overflowX: 'auto' }}>
+            {simpleIntegrationCode}
           </pre>
         </div>
       )}
