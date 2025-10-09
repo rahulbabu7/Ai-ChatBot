@@ -23,8 +23,8 @@ def verify_jwt(token: str) -> str:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-def get_client_from_header(x_token: str = Header(None)) -> str:
-    """FastAPI dependency to extract client_id from JWT token in header"""
-    if not x_token:
-        raise HTTPException(status_code=401, detail="Missing token")
-    return verify_jwt(x_token)
+def get_client_from_header(authorization: str = Header(None)) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid token")
+    token = authorization.split(" ")[1]
+    return verify_jwt(token)

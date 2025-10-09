@@ -39,7 +39,10 @@ const Dashboard = () => {
     const fetchClient = async () => {
       try {
         const res = await fetch(`${API_URL}/client/me`, {
-          headers: { 'x-token': token }
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          }
         });
         if (!res.ok) throw new Error('Failed to fetch client');
         const data = await res.json();
@@ -62,7 +65,10 @@ const Dashboard = () => {
   const fetchClientTasks = async () => {
     try {
       const res = await fetch(`${API_URL}/client/me/tasks`, {
-        headers: { 'x-token': token }
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
       });
       if (res.ok) {
         const data = await res.json();
@@ -85,7 +91,10 @@ const Dashboard = () => {
 
       try {
         const res = await fetch(`${API_URL}/client/me/task-status/${taskId}`, {
-          headers: { 'x-token': token }
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          }
         });
 
         if (res.ok) {
@@ -119,20 +128,45 @@ const Dashboard = () => {
     [token]
   );
 
+  // const call = async (url, options = {}) => {
+  //   setBusy(true);
+  //   setLog(`Calling ${url} ...`);
+  //   try {
+  //     const res = await fetch(`${API_URL}${url}`, {
+  //       ...options,
+  //       headers: { ...(options.headers || {}), 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+  //     });
+  //     const data = await res.json();
+  //     setLog(JSON.stringify(data, null, 2));
+
+  //     if (data.task_id) {
+  //       pollTaskStatus(data.task_id);
+  //     }
+
+  //     return data;
+  //   } catch (e) {
+  //     setLog(`Error: ${e?.message || e}`);
+  //     throw e;
+  //   } finally {
+  //     setBusy(false);
+  //   }
+  // };
   const call = async (url, options = {}) => {
     setBusy(true);
     setLog(`Calling ${url} ...`);
     try {
-      const res = await fetch(`${API_URL}${url}`, {
-        ...options,
-        headers: { ...(options.headers || {}), 'x-token': token }
-      });
+      const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` };
+
+      // If body is FormData, do NOT set Content-Type (browser sets it automatically)
+      if (!(options.body instanceof FormData)) {
+        headers['Content-Type'] = 'application/json';
+      }
+
+      const res = await fetch(`${API_URL}${url}`, { ...options, headers });
       const data = await res.json();
       setLog(JSON.stringify(data, null, 2));
 
-      if (data.task_id) {
-        pollTaskStatus(data.task_id);
-      }
+      if (data.task_id) pollTaskStatus(data.task_id);
 
       return data;
     } catch (e) {
@@ -152,7 +186,6 @@ const Dashboard = () => {
     try {
       const data = await call('/client/me/crawl-and-embed', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ allowed_domain: allowedDomain, start_url: startUrl })
       });
       if (data.task_id) {
@@ -182,18 +215,18 @@ const Dashboard = () => {
 
   const uploadPDF = async () => {
     if (!pdfFile) {
-      alert("Please select a PDF file first.");
+      alert('Please select a PDF file first.');
       return;
     }
     const formData = new FormData();
-    formData.append("file", pdfFile);
+    formData.append('file', pdfFile);
     try {
-      await call("/client/upload-pdf/me", {
-        method: "POST",
-        body: formData,
+      await call('/client/upload-pdf/me', {
+        method: 'POST',
+        body: formData
       });
     } catch (e) {
-      console.error("Failed to upload PDF:", e);
+      console.error('Failed to upload PDF:', e);
     }
   };
 
@@ -201,7 +234,10 @@ const Dashboard = () => {
     try {
       const data = await call('/client/me/embed-pdf', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
         body: JSON.stringify({})
       });
       if (data.task_id) {
@@ -215,7 +251,7 @@ const Dashboard = () => {
   // Custom Q&A functions
   const addQAPair = () => {
     if (!question.trim() || !answer.trim()) {
-      alert("Please fill both fields");
+      alert('Please fill both fields');
       return;
     }
     setQaList([...qaList, { question, answer }]);
@@ -225,14 +261,14 @@ const Dashboard = () => {
 
   const submitQAs = async () => {
     if (qaList.length === 0) {
-      alert("Please add at least one Q&A.");
+      alert('Please add at least one Q&A.');
       return;
     }
 
     const qaJson = qaList;
-    const blob = new Blob([JSON.stringify(qaJson, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(qaJson, null, 2)], { type: 'application/json' });
     const formData = new FormData();
-    formData.append("file", blob, "manual_qa.json");
+    formData.append('file', blob, 'manual_qa.json');
 
     try {
       await call('/client/upload-qa/me', { method: 'POST', body: formData });
@@ -240,7 +276,7 @@ const Dashboard = () => {
       setQuestion('');
       setAnswer('');
     } catch (e) {
-      console.error("Failed to upload Q&A:", e);
+      console.error('Failed to upload Q&A:', e);
     }
   };
 
@@ -284,21 +320,31 @@ const Dashboard = () => {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'completed': return 'success';
-      case 'failed': return 'danger';
-      case 'running': return 'primary';
-      case 'pending': return 'warning';
-      default: return 'secondary';
+      case 'completed':
+        return 'success';
+      case 'failed':
+        return 'danger';
+      case 'running':
+        return 'primary';
+      case 'pending':
+        return 'warning';
+      default:
+        return 'secondary';
     }
   };
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'completed': return '✅';
-      case 'failed': return '❌';
-      case 'running': return '🔄';
-      case 'queued': return '⏳';
-      default: return '📋';
+      case 'completed':
+        return '✅';
+      case 'failed':
+        return '❌';
+      case 'running':
+        return '🔄';
+      case 'queued':
+        return '⏳';
+      default:
+        return '📋';
     }
   };
 
@@ -342,16 +388,27 @@ const Dashboard = () => {
         <div className="row">
           <div className="col-md-8">
             <label className="form-label">Upload Q&A JSON File:</label>
-            <input type="file" accept="application/json" className="form-control mb-2" onChange={(e) => setQaFile(e.target.files?.[0] || null)} />
+            <input
+              type="file"
+              accept="application/json"
+              className="form-control mb-2"
+              onChange={(e) => setQaFile(e.target.files?.[0] || null)}
+            />
             <div className="d-flex flex-wrap gap-2">
-              <button className="btn btn-warning" disabled={busy || !qaFile} onClick={uploadQA}>📥 Upload Q&A File</button>
-              <button className="btn btn-outline-success" onClick={() => setShowQAModal(true)}>➕ Add Custom Q&A</button>
+              <button className="btn btn-warning" disabled={busy || !qaFile} onClick={uploadQA}>
+                📥 Upload Q&A File
+              </button>
+              <button className="btn btn-outline-success" onClick={() => setShowQAModal(true)}>
+                ➕ Add Custom Q&A
+              </button>
             </div>
           </div>
           <div className="col-md-4">
             <label className="form-label">Manage Existing Q&A:</label>
             <div className="d-grid gap-2">
-              <button className="btn btn-outline-info" onClick={viewQAContent}>👁️ View Q&A Content</button>
+              <button className="btn btn-outline-info" onClick={viewQAContent}>
+                👁️ View Q&A Content
+              </button>
             </div>
           </div>
         </div>
@@ -363,16 +420,27 @@ const Dashboard = () => {
         <div className="row">
           <div className="col-md-8">
             <label className="form-label">Upload Custom PDF:</label>
-            <input type="file" accept="application/pdf" className="form-control mb-2" onChange={(e) => setPdfFile(e.target.files?.[0] || null)} />
+            <input
+              type="file"
+              accept="application/pdf"
+              className="form-control mb-2"
+              onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
+            />
             <div className="d-flex flex-wrap gap-2">
-              <button className="btn btn-warning" disabled={busy || !pdfFile} onClick={uploadPDF}>📄 Upload PDF</button>
-              <button className="btn btn-success" disabled={busy} onClick={triggerPDFEmbed}>🚀 Embed PDF</button>
+              <button className="btn btn-warning" disabled={busy || !pdfFile} onClick={uploadPDF}>
+                📄 Upload PDF
+              </button>
+              <button className="btn btn-success" disabled={busy} onClick={triggerPDFEmbed}>
+                🚀 Embed PDF
+              </button>
             </div>
           </div>
           <div className="col-md-4">
             <label className="form-label">Manage Existing PDF:</label>
             <div className="d-grid gap-2">
-              <button className="btn btn-outline-info" onClick={viewPDFInfo}>👁️ View PDF Info</button>
+              <button className="btn btn-outline-info" onClick={viewPDFInfo}>
+                👁️ View PDF Info
+              </button>
             </div>
           </div>
         </div>
@@ -390,28 +458,45 @@ const Dashboard = () => {
               <div className="modal-body">
                 <div className="mb-3">
                   <label className="form-label">Question</label>
-                  <input type="text" className="form-control" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Enter your question..." />
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    placeholder="Enter your question..."
+                  />
                 </div>
                 <div className="mb-3">
                   <label className="form-label">Answer</label>
-                  <textarea className="form-control" rows="3" value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="Enter the answer..."></textarea>
+                  <textarea
+                    className="form-control"
+                    rows="3"
+                    value={answer}
+                    onChange={(e) => setAnswer(e.target.value)}
+                    placeholder="Enter the answer..."
+                  ></textarea>
                 </div>
-                <button className="btn btn-secondary mb-3" onClick={addQAPair}>➕ Add to List ({qaList.length} items)</button>
-                
+                <button className="btn btn-secondary mb-3" onClick={addQAPair}>
+                  ➕ Add to List ({qaList.length} items)
+                </button>
+
                 {qaList.length > 0 && (
                   <div className="border p-3 bg-light" style={{ maxHeight: '300px', overflowY: 'auto' }}>
                     <h6>Q&A List Preview:</h6>
                     {qaList.map((qa, i) => (
                       <div key={i} className="mb-2 p-2 border-bottom">
-                        <strong>Q{i+1}:</strong> {qa.question}<br />
-                        <strong>A{i+1}:</strong> {qa.answer}
+                        <strong>Q{i + 1}:</strong> {qa.question}
+                        <br />
+                        <strong>A{i + 1}:</strong> {qa.answer}
                       </div>
                     ))}
                   </div>
                 )}
               </div>
               <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={() => setShowQAModal(false)}>Cancel</button>
+                <button className="btn btn-secondary" onClick={() => setShowQAModal(false)}>
+                  Cancel
+                </button>
                 <button className="btn btn-primary" onClick={submitQAs} disabled={qaList.length === 0}>
                   📤 Submit All Q&As ({qaList.length})
                 </button>
@@ -427,9 +512,7 @@ const Dashboard = () => {
           <div className="modal-dialog modal-xl">
             <div className="modal-content">
               <div className="modal-header">
-                <h5 className="modal-title">
-                  {viewType === 'qa' ? 'Q&A Content' : 'PDF Information'}
-                </h5>
+                <h5 className="modal-title">{viewType === 'qa' ? 'Q&A Content' : 'PDF Information'}</h5>
                 <button className="btn-close" onClick={() => setShowViewModal(false)}></button>
               </div>
               <div className="modal-body">
@@ -437,18 +520,16 @@ const Dashboard = () => {
                   <div>
                     {viewContent.has_qa ? (
                       <div>
-                        <div className="alert alert-success">
-                          Found {viewContent.qa_count} Q&A pairs
-                        </div>
+                        <div className="alert alert-success">Found {viewContent.qa_count} Q&A pairs</div>
                         <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
                           {viewContent.qa_data.map((qa, i) => (
                             <div key={i} className="card mb-2">
                               <div className="card-body">
-                                <h6 className="card-title">Q{i+1}: {qa.question || qa.questions?.[0]}</h6>
+                                <h6 className="card-title">
+                                  Q{i + 1}: {qa.question || qa.questions?.[0]}
+                                </h6>
                                 {qa.questions?.length > 1 && (
-                                  <small className="text-muted">
-                                    Alternative questions: {qa.questions.slice(1).join(', ')}
-                                  </small>
+                                  <small className="text-muted">Alternative questions: {qa.questions.slice(1).join(', ')}</small>
                                 )}
                                 <p className="card-text mt-2">
                                   <strong>Answer:</strong> {qa.answer}
@@ -459,9 +540,7 @@ const Dashboard = () => {
                         </div>
                       </div>
                     ) : (
-                      <div className="alert alert-warning">
-                        {viewContent.message}
-                      </div>
+                      <div className="alert alert-warning">{viewContent.message}</div>
                     )}
                   </div>
                 )}
@@ -470,9 +549,7 @@ const Dashboard = () => {
                   <div>
                     {viewContent.has_pdf ? (
                       <div>
-                        <div className="alert alert-success">
-                          PDF file found and processed
-                        </div>
+                        <div className="alert alert-success">PDF file found and processed</div>
                         <div className="row">
                           <div className="col-md-6">
                             <h6>File Information:</h6>
@@ -506,15 +583,15 @@ const Dashboard = () => {
                         </div>
                       </div>
                     ) : (
-                      <div className="alert alert-warning">
-                        No PDF file found
-                      </div>
+                      <div className="alert alert-warning">No PDF file found</div>
                     )}
                   </div>
                 )}
               </div>
               <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={() => setShowViewModal(false)}>Close</button>
+                <button className="btn btn-secondary" onClick={() => setShowViewModal(false)}>
+                  Close
+                </button>
                 {((viewType === 'qa' && viewContent?.has_qa) || (viewType === 'pdf' && viewContent?.has_pdf)) && (
                   <button className="btn btn-danger" onClick={() => deleteContent(viewType)}>
                     🗑️ Delete {viewType === 'qa' ? 'Q&A' : 'PDF'}
@@ -525,7 +602,7 @@ const Dashboard = () => {
           </div>
         </div>
       )}
-      
+
       {/* Logs */}
       <div className="card p-4 shadow-sm">
         <h5 className="card-title">Logs & Status</h5>

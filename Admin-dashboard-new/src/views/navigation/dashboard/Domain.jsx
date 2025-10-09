@@ -26,7 +26,10 @@ const Domain = () => {
     setIsLoading(true);
     try {
       const res = await fetch(`${API_URL}/client/domains/me`, {
-        headers: { 'x-token': token }
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
       });
       if (!res.ok) throw new Error('Failed to fetch domains');
       const data = await res.json();
@@ -44,7 +47,10 @@ const Domain = () => {
     try {
       const res = await fetch(`${API_URL}/client/register-my-domains/me`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-token': token },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
         body: JSON.stringify([newDomain.trim()])
       });
 
@@ -70,7 +76,10 @@ const Domain = () => {
     try {
       const res = await fetch(`${API_URL}/client/domains/me/${domainName}`, {
         method: 'DELETE',
-        headers: { 'x-token': token }
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
       });
 
       if (!res.ok) throw new Error('Failed to delete domain');

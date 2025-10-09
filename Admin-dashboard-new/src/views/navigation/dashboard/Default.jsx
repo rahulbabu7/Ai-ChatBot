@@ -27,7 +27,10 @@ export default function DefaultPage() {
 
     axios
       .get(`${API_URL}/client/sessions/me`, {
-        headers: { 'x-token': token }
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
       })
       .then((res) => {
         setSessions(res.data.sessions || []);
@@ -49,7 +52,12 @@ export default function DefaultPage() {
     axios
       .get(
         `${API_URL}/client/chats/me?session_id=${selectedSession}`, // ✅ match backend
-        { headers: { 'x-token': token } }
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          }
+        }
       )
       .then((res) => setChats(res.data.chats || []))
       .catch(() => setChats([]))

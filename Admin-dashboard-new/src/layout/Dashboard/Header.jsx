@@ -19,12 +19,14 @@ export default function Header() {
     const fetchUserDetails = async () => {
       try {
         // Try to get token from localStorage first, then sessionStorage
-        const token =
-          localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
+        const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
         if (!token) return;
 
         const res = await fetch(`${API_URL}/auth/me`, {
-          headers: { 'x-token': token }  // matches backend
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          } // matches backend
         });
         if (!res.ok) throw new Error('Failed to fetch user details');
 
