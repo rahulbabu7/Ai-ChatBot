@@ -26,7 +26,7 @@ const PagesRoutes = {
       path: '/',
       element: <DashboardLayout />,
       children: [
-        { path: 'dashboard-admin', element: <AdminDashboard /> },
+        // { path: 'dashboard-admin', element: <AdminDashboard /> },
         { path: 'dashboard', element: <ClientDashboard /> }, // ✅ fixed route
         { path: 'domain', element: <DomainIntegration /> }
       ]

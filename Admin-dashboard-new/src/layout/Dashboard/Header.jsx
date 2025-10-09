@@ -6,6 +6,7 @@ import Nav from 'react-bootstrap/Nav';
 import Stack from 'react-bootstrap/Stack';
 import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
 import Img2 from 'assets/images/user/avatar-2.png';
+import { API_URL } from '../../config';
 
 export default function Header() {
   const navigate = useNavigate();
@@ -22,7 +23,7 @@ export default function Header() {
           localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
         if (!token) return;
 
-        const res = await fetch('http://localhost:8000/auth/me', {
+        const res = await fetch(`${API_URL}/auth/me`, {
           headers: { 'x-token': token }  // matches backend
         });
         if (!res.ok) throw new Error('Failed to fetch user details');

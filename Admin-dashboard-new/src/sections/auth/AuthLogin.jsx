@@ -24,7 +24,6 @@ export default function AuthLogin({ className }) {
 
     setIsLoading(true);
     setLog('Logging in...');
-    console.log(API_URL);
     try {
       const res = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
