@@ -1,16 +1,22 @@
 import jwt
-from datetime import datetime, timedelta
-from fastapi import HTTPException, Header, Depends
+from datetime import datetime, timedelta,timezone
+from fastapi import HTTPException, Header
+import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
 # JWT settings
-SECRET_KEY = "your_super_secret_key"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 def create_jwt(client_id: str) -> str:
     """Create a JWT token for the given client_id"""
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {"client_id": client_id, "exp": expire}
+    print(SECRET_KEY)
+    print(ALGORITHM)
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 def verify_jwt(token: str) -> str:
