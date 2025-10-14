@@ -15,8 +15,6 @@ def create_jwt(client_id: str) -> str:
     """Create a JWT token for the given client_id"""
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {"client_id": client_id, "exp": expire}
-    print(SECRET_KEY)
-    print(ALGORITHM)
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 def verify_jwt(token: str) -> str:
