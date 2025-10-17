@@ -70,9 +70,9 @@ export default function AuthLogin({ className }) {
             <Form.Control type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </Form.Group>
 
-          <div className="d-flex justify-content-between align-items-center mb-3">
+          <div className="d-flex align-items-center mb-3">
             <Form.Check type="checkbox" label="Remember me" checked={remember} onChange={() => setRemember(!remember)} />
-            <Link to="/forgot-password" className="text-primary">
+            <Link to="/forgot-password" className="text-primary ms-4">
               Forgot Password?
             </Link>
           </div>
@@ -84,7 +84,7 @@ export default function AuthLogin({ className }) {
           {log && <p className={`mt-3 text-center ${log.startsWith('✅') ? 'text-success' : 'text-danger'}`}>{log}</p>}
 
           <div className="mt-3 text-center">
-            New Client?
+            New Client? 
             <Link to="/register" className="d-block">
               Register Here
             </Link>
