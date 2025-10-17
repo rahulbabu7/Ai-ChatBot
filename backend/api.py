@@ -33,7 +33,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -465,7 +465,7 @@ async def upload_pdf(file: UploadFile = File(...), client_id: str = Depends(get_
     """Upload and extract text from a PDF file."""
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
-    
+
     client_dir = os.path.join(CLIENTS_DIR, client_id)
     os.makedirs(client_dir, exist_ok=True)
     # id=0
@@ -475,27 +475,27 @@ async def upload_pdf(file: UploadFile = File(...), client_id: str = Depends(get_
     async with aiofiles.open(pdf_path, "wb") as f:
         content = await file.read()
         await f.write(content)
-    
+
     try:
         # Extract text from PDF using PyPDF2
         reader = PdfReader(pdf_path)
         text_content = ""
-        
+
         for page in reader.pages:
             text_content += page.extract_text() + "\n\n"
-        
+
         # Save extracted text
         text_path = os.path.join(client_dir, "custom_pdf.txt")
         async with aiofiles.open(text_path, "w", encoding="utf-8") as f:
             await f.write(text_content)
-        
+
         return {
-            "status": "success", 
+            "status": "success",
             "message": f"PDF uploaded and text extracted for {client_id}",
             "pages_extracted": len(reader.pages),
             "text_length": len(text_content)
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to extract text from PDF: {str(e)}")
 
@@ -505,10 +505,10 @@ async def embed_pdf(client_id: str = Depends(get_client_from_header)):
     """Start embedding process for uploaded PDF."""
     client_dir = os.path.join(CLIENTS_DIR, client_id)
     pdf_text_path = os.path.join(client_dir, "custom_pdf.txt")
-    
+
     if not os.path.exists(pdf_text_path):
         raise HTTPException(status_code=404, detail="No PDF text found. Please upload a PDF first.")
-    
+
     task = pdf_embed_pipeline.delay(client_id)
     return TaskResponse(task_id=task.id, status="queued", message="PDF embedding task queued.")
 
@@ -540,19 +540,19 @@ async def view_qa(client_id: str = Depends(get_client_from_header)):
     """View uploaded Q&A content"""
     client_dir = os.path.join(CLIENTS_DIR, client_id)
     qa_path = os.path.join(client_dir, "custom_qa.json")
-    
+
     if not os.path.exists(qa_path):
         return {
             "has_qa": False,
             "qa_data": [],
             "message": "No Q&A file found"
         }
-    
+
     try:
         async with aiofiles.open(qa_path, "r", encoding="utf-8") as f:
             content = await f.read()
             qa_data = json.loads(content)
-        
+
         return {
             "has_qa": True,
             "qa_data": qa_data,
@@ -575,13 +575,13 @@ async def view_pdf_info(client_id: str = Depends(get_client_from_header)):
     client_dir = os.path.join(CLIENTS_DIR, client_id)
     pdf_path = os.path.join(client_dir, "custom_pdf.pdf")
     text_path = os.path.join(client_dir, "custom_pdf.txt")
-    
+
     result = {
         "has_pdf": os.path.exists(pdf_path),
         "has_extracted_text": os.path.exists(text_path),
         "pdf_info": {}
     }
-    
+
     if result["has_pdf"]:
         try:
             # Get PDF file info
@@ -592,22 +592,22 @@ async def view_pdf_info(client_id: str = Depends(get_client_from_header)):
                 "size_mb": round(pdf_stat.st_size / (1024 * 1024), 2),
                 "uploaded_date": pdf_stat.st_mtime
             }
-            
+
             # Get text extraction info if available
             if result["has_extracted_text"]:
                 try:
                     async with aiofiles.open(text_path, "r", encoding="utf-8") as f:
                         text_content = await f.read()
-                    
+
                     result["pdf_info"]["text_length"] = len(text_content)
                     result["pdf_info"]["word_count"] = len(text_content.split())
                     result["pdf_info"]["preview"] = text_content[:500] + "..." if len(text_content) > 500 else text_content
                 except Exception:
                     result["pdf_info"]["text_extraction_error"] = "Could not read extracted text"
-            
+
         except Exception as e:
             result["pdf_info"]["error"] = str(e)
-    
+
     return result
 
 
@@ -616,17 +616,17 @@ async def delete_qa(client_id: str = Depends(get_client_from_header)):
     """Delete Q&A file"""
     client_dir = os.path.join(CLIENTS_DIR, client_id)
     qa_path = os.path.join(client_dir, "custom_qa.json")
-    
+
     if not os.path.exists(qa_path):
         raise HTTPException(status_code=404, detail="No Q&A file found")
-    
+
     try:
         os.remove(qa_path)
-        
+
         # Clear cache
         from llm_service import reload_custom_qa_cache
         reload_custom_qa_cache(client_id)
-        
+
         return {"success": True, "message": "Q&A file deleted and cache cleared"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete Q&A file: {str(e)}")
@@ -638,10 +638,10 @@ async def delete_pdf(client_id: str = Depends(get_client_from_header)):
     client_dir = os.path.join(CLIENTS_DIR, client_id)
     pdf_path = os.path.join(client_dir, "custom_pdf.pdf")
     text_path = os.path.join(client_dir, "custom_pdf.txt")
-    
+
     deleted_files = []
     errors = []
-    
+
     for file_path, file_type in [(pdf_path, "PDF"), (text_path, "extracted text")]:
         if os.path.exists(file_path):
             try:
@@ -649,12 +649,12 @@ async def delete_pdf(client_id: str = Depends(get_client_from_header)):
                 deleted_files.append(file_type)
             except Exception as e:
                 errors.append(f"Failed to delete {file_type}: {str(e)}")
-    
+
     if not deleted_files:
         raise HTTPException(status_code=404, detail="No PDF files found")
-    
+
     result = {"success": True, "deleted_files": deleted_files}
     if errors:
         result["errors"] = errors
-    
+
     return result
