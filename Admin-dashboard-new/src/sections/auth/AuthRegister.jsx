@@ -30,8 +30,21 @@ export default function AuthRegister({ link }) {
     e.preventDefault();
     const { name, username, password, mobile, email } = formData;
 
+    // ✅ Basic empty-field check
     if (!name || !username || !password || !mobile || !email) {
       setLog('❌ Please fill all fields');
+      return;
+    }
+
+    // ✅ Validate mobile number (must be exactly 10 digits)
+    if (!/^\d{10}$/.test(mobile)) {
+      setLog('❌ Mobile number must be exactly 10 digits');
+      return;
+    }
+
+    // ✅ Validate email (must contain "@")
+    if (!email.includes('@')) {
+      setLog('❌ Invalid email — missing "@" symbol');
       return;
     }
 
