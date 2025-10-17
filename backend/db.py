@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import uuid
 
 DB_FILE = os.path.join(os.path.dirname(__file__), "app.db")
 
@@ -85,24 +86,38 @@ def register_domain(domain, client_id):
         cursor.execute("SELECT chatbot_key FROM users WHERE client_id = ?", (client_id,))
         user = cursor.fetchone()
 
-        if not user or not user['chatbot_key']:
+        if not user:
+            print(f"❌ User not found for client_id: {client_id}")
             return False
+
+        chatbot_key = user['chatbot_key']
+
+        # ✅ If chatbot_key is NULL, generate one
+        if not chatbot_key:
+            chatbot_key = str(uuid.uuid4())
+            cursor.execute(
+                "UPDATE users SET chatbot_key = ? WHERE client_id = ?",
+                (chatbot_key, client_id)
+            )
+            print(f"✅ Generated new chatbot_key for client: {client_id}")
 
         # Clean domain
         clean_domain = domain.lower().replace('https://', '').replace('http://', '').replace('www.', '').rstrip('/')
+        print(f"Registering domain: {clean_domain} for client: {client_id}")
 
         # Insert domain mapping
         cursor.execute("""
             INSERT OR REPLACE INTO domain_mappings (domain, client_id, chatbot_key)
             VALUES (?, ?, ?)
-        """, (clean_domain, client_id, user['chatbot_key']))
+        """, (clean_domain, client_id, chatbot_key))
 
         conn.commit()
+        print(f"✅ Domain registered successfully: {clean_domain}")
         return True
 
     except Exception as e:
         conn.rollback()
-        print(f"Error registering domain: {e}")
+        print(f"❌ Error registering domain: {e}")
         return False
     finally:
         conn.close()
