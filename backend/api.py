@@ -13,6 +13,12 @@ import bcrypt
 import requests
 from celery.result import AsyncResult
 import json
+from datetime import datetime, timedelta
+from typing import Dict, Optional
+import asyncio
+import threading
+import time
+
 
 # DB helpers
 from backend.db import get_db, remove_domain, get_client_by_domain, register_domain as db_register_domain
@@ -348,122 +354,237 @@ async def get_sessions(client_id: str = Depends(get_client_from_header)):
 # ----------------------------
 # DAILY STATS ENDPOINT
 # ----------------------------
+#
+active_users_lock = threading.Lock()
+# In-memory store for active users (use Redis in production)
+active_users: Dict[str, Dict] = {}
+
+# Pydantic model for heartbeat
+class HeartbeatRequest(BaseModel):
+    session_id: str
+    is_chatbot_open: bool
+
+
 @app.get("/client/stats/daily", response_model=StatsResponse)
 async def get_daily_stats(client_id: str = Depends(get_client_from_header)):
-    """
-    Get daily statistics for visitors and chats for the dashboard graph
-    """
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Calculate date range for last 7 days
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=6)  # 7 days total
-        
-        # Try to get actual data from database
-        daily_stats = await get_actual_daily_stats(cursor, client_id, start_date, end_date)
-        
-        # If no actual data, generate sample data
-        if not daily_stats:
-            daily_stats = generate_sample_data()
-        
-        conn.close()
-        
-        return {"daily_stats": daily_stats}
-        
-    except Exception as e:
-        # Fallback to sample data in case of error
-        daily_stats = generate_sample_data()
-        return {"daily_stats": daily_stats}
+    """Get daily statistics for the last 7 days"""
+    conn = get_db()
+    cursor = conn.cursor()
 
-async def get_actual_daily_stats(cursor, client_id: str, start_date: datetime, end_date: datetime):
-    """
-    Get actual daily stats from database
-    """
-    try:
-        # Query to get daily visitor count (unique sessions) and chat count
-        query = """
-            SELECT 
-                DATE(created_at) as date,
-                COUNT(DISTINCT session_id) as visitors,
-                COUNT(*) as chats
-            FROM chats 
-            WHERE client_id = ? 
-                AND created_at >= ? 
-                AND created_at <= ?
-            GROUP BY DATE(created_at)
-            ORDER BY date ASC
-        """
-        
-        cursor.execute(query, (client_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
-        results = cursor.fetchall()
-        
-        daily_stats = []
-        for row in results:
-            daily_stats.append({
-                "date": row["date"],
-                "visitors": row["visitors"],
-                "chats": row["chats"]
-            })
-        
-        # Fill in missing dates with zeros
-        return fill_missing_dates(daily_stats, start_date, end_date)
-        
-    except Exception as e:
-        print(f"Error fetching actual stats: {e}")
-        return []
+    # Calculate date range for last 7 days
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=6)
 
-def fill_missing_dates(stats: list, start_date: datetime, end_date: datetime):
+    # Query to get daily stats
+    query = """
+        SELECT
+            DATE(created_at) as date,
+            COUNT(DISTINCT session_id) as visitors,
+            COUNT(*) as chats
+        FROM chats
+        WHERE client_id = ?
+            AND DATE(created_at) >= DATE(?)
+            AND DATE(created_at) <= DATE(?)
+        GROUP BY DATE(created_at)
+        ORDER BY date ASC
     """
-    Fill in missing dates with zero values
-    """
-    date_range = []
-    current_date = start_date
-    
-    while current_date <= end_date:
-        date_range.append(current_date.strftime('%Y-%m-%d'))
-        current_date += timedelta(days=1)
-    
+
+    cursor.execute(
+        query,
+        (client_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+    )
+    results = cursor.fetchall()
+
     # Create a dictionary for easy lookup
-    stats_dict = {stat["date"]: stat for stat in stats}
-    
-    # Build complete list with all dates
-    complete_stats = []
-    for date in date_range:
-        if date in stats_dict:
-            complete_stats.append(stats_dict[date])
+    stats_dict = {}
+    for row in results:
+        stats_dict[row["date"]] = {
+            "date": row["date"],
+            "visitors": row["visitors"],
+            "chats": row["chats"]
+        }
+
+    # Fill in missing dates with zeros
+    daily_stats = []
+    current_date = start_date
+
+    while current_date <= end_date:
+        date_str = current_date.strftime('%Y-%m-%d')
+
+        if date_str in stats_dict:
+            daily_stats.append(stats_dict[date_str])
         else:
-            complete_stats.append({
-                "date": date,
+            daily_stats.append({
+                "date": date_str,
                 "visitors": 0,
                 "chats": 0
             })
-    
-    return complete_stats
 
-def generate_sample_data():
-    """
-    Generate sample data for demonstration
-    """
-    stats = []
-    today = datetime.now()
-    
-    for i in range(6, -1, -1):
-        date = today - timedelta(days=i)
-        
-        # More realistic data pattern (higher on weekdays, lower on weekends)
-        is_weekend = date.weekday() >= 5  # 5=Saturday, 6=Sunday
-        base_visitors = 15 if is_weekend else 25
-        base_chats = 8 if is_weekend else 15
-        
-        stats.append({
-            "date": date.strftime('%Y-%m-%d'),
-            "visitors": max(0, base_visitors + random.randint(-8, 8)),
-            "chats": max(0, base_chats + random.randint(-5, 5))
-        })
-    
-    return stats
+        current_date += timedelta(days=1)
+
+    conn.close()
+
+    print(f"📊 Daily stats for {client_id}: {daily_stats}")
+
+    return {"daily_stats": daily_stats}
+
+@app.get("/client/stats/dashboard")
+async def get_dashboard_stats(client_id: str = Depends(get_client_from_header)):
+    """Get all dashboard statistics in one call"""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # 1. Total Sessions (all time)
+    cursor.execute(
+        "SELECT COUNT(DISTINCT session_id) as total FROM chats WHERE client_id=?",
+        (client_id,)
+    )
+    total_sessions = cursor.fetchone()["total"]
+
+    # 2. Today's Sessions (unique sessions today)
+    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute(
+        """
+        SELECT COUNT(DISTINCT session_id) as today_sessions
+        FROM chats
+        WHERE client_id=? AND created_at >= ?
+        """,
+        (client_id, today_start)
+    )
+    today_sessions = cursor.fetchone()["today_sessions"]
+
+    # 3. Today's Visitors (same as today's sessions - unique users)
+    today_visitors = today_sessions
+
+    # 4. Active Users Now (from heartbeat - chatbot currently open)
+    now = datetime.now()
+    timeout = timedelta(seconds=45)
+
+    with active_users_lock:
+        active_now = sum(
+            1 for data in active_users.values()
+            if data["client_id"] == client_id and (now - data["last_seen"]) <= timeout
+        )
+
+    conn.close()
+
+    print(f"📊 Dashboard stats for {client_id}: Total={total_sessions}, Today={today_sessions}, Active={active_now}")
+
+    return {
+        "total_sessions": total_sessions,
+        "today_sessions": today_sessions,
+        "today_visitors": today_visitors,
+        "active_users_now": active_now
+    }
+
+
+# Background cleanup task - ADD THIS AT THE END OF YOUR FILE (REPLACE EXISTING)
+def cleanup_stale_users():
+    """Background thread to clean up stale users"""
+    while True:
+        time.sleep(30)
+        now = datetime.now()
+        timeout = timedelta(seconds=45)
+
+        with active_users_lock:
+            stale_keys = [
+                key for key, data in active_users.items()
+                if (now - data["last_seen"]) > timeout
+            ]
+
+            for key in stale_keys:
+                print(f"🧹 Cleaning stale user: {key}")
+                del active_users[key]
+
+
+
+# async def get_actual_daily_stats(cursor, client_id: str, start_date: datetime, end_date: datetime):
+#     """
+#     Get actual daily stats from database
+#     """
+#     try:
+#         # Query to get daily visitor count (unique sessions) and chat count
+#         query = """
+#             SELECT
+#                 DATE(created_at) as date,
+#                 COUNT(DISTINCT session_id) as visitors,
+#                 COUNT(*) as chats
+#             FROM chats
+#             WHERE client_id = ?
+#                 AND created_at >= ?
+#                 AND created_at <= ?
+#             GROUP BY DATE(created_at)
+#             ORDER BY date ASC
+#         """
+
+#         cursor.execute(query, (client_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+#         results = cursor.fetchall()
+
+#         daily_stats = []
+#         for row in results:
+#             daily_stats.append({
+#                 "date": row["date"],
+#                 "visitors": row["visitors"],
+#                 "chats": row["chats"]
+#             })
+
+#         # Fill in missing dates with zeros
+#         return fill_missing_dates(daily_stats, start_date, end_date)
+
+#     except Exception as e:
+#         print(f"Error fetching actual stats: {e}")
+#         return []
+
+# def fill_missing_dates(stats: list, start_date: datetime, end_date: datetime):
+#     """
+#     Fill in missing dates with zero values
+#     """
+#     date_range = []
+#     current_date = start_date
+
+#     while current_date <= end_date:
+#         date_range.append(current_date.strftime('%Y-%m-%d'))
+#         current_date += timedelta(days=1)
+
+#     # Create a dictionary for easy lookup
+#     stats_dict = {stat["date"]: stat for stat in stats}
+
+#     # Build complete list with all dates
+#     complete_stats = []
+#     for date in date_range:
+#         if date in stats_dict:
+#             complete_stats.append(stats_dict[date])
+#         else:
+#             complete_stats.append({
+#                 "date": date,
+#                 "visitors": 0,
+#                 "chats": 0
+#             })
+
+#     return complete_stats
+
+# def generate_sample_data():
+#     """
+#     Generate sample data for demonstration
+#     """
+#     stats = []
+#     today = datetime.now()
+
+#     for i in range(6, -1, -1):
+#         date = today - timedelta(days=i)
+
+#         # More realistic data pattern (higher on weekdays, lower on weekends)
+#         is_weekend = date.weekday() >= 5  # 5=Saturday, 6=Sunday
+#         base_visitors = 15 if is_weekend else 25
+#         base_chats = 8 if is_weekend else 15
+
+#         stats.append({
+#             "date": date.strftime('%Y-%m-%d'),
+#             "visitors": max(0, base_visitors + random.randint(-8, 8)),
+#             "chats": max(0, base_chats + random.randint(-5, 5))
+#         })
+
+#     return stats
 
 
 # ----------------------------
@@ -791,3 +912,108 @@ async def delete_pdf(client_id: str = Depends(get_client_from_header)):
         result["errors"] = errors
 
     return result
+
+
+# ===== NEW ENDPOINTS =====
+
+@app.post("/client/heartbeat/{client_id}")
+async def chatbot_heartbeat(
+    client_id: str,
+    req: HeartbeatRequest,
+    request: Request,
+    x_chatbot_key: str = Header(None)
+):
+    """
+    Track active chatbot users with heartbeat mechanism
+    """
+    # Validate client + chatbot_key
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE client_id=? AND chatbot_key=?", (client_id, x_chatbot_key))
+    client = cursor.fetchone()
+    conn.close()
+
+    if not client:
+        raise HTTPException(status_code=403, detail="Invalid client or key")
+
+    # Create unique key for this user
+    user_key = f"{client_id}:{req.session_id}"
+
+    if req.is_chatbot_open:
+        # User has chatbot open - update/add to active users
+        active_users[user_key] = {
+            "client_id": client_id,
+            "session_id": req.session_id,
+            "last_seen": datetime.now(),
+            "ip": request.client.host,
+            "user_agent": request.headers.get("user-agent", "unknown")
+        }
+    else:
+        # User closed chatbot - remove from active users
+        if user_key in active_users:
+            del active_users[user_key]
+
+    return {"status": "ok", "active": req.is_chatbot_open}
+
+
+@app.get("/client/active-users/me")
+async def get_active_users(client_id: str = Depends(get_client_from_header)):
+    """
+    Get count of currently active users for this client
+    """
+    now = datetime.now()
+    timeout = timedelta(seconds=30)  # Consider inactive after 30 seconds without heartbeat
+
+    # Clean up stale entries
+    stale_keys = [
+        key for key, data in active_users.items()
+        if (now - data["last_seen"]) > timeout or data["client_id"] != client_id
+    ]
+    for key in stale_keys:
+        del active_users[key]
+
+    # Count active users for this client
+    active_count = sum(1 for data in active_users.values() if data["client_id"] == client_id)
+
+    # Get detailed info
+    active_sessions = [
+        {
+            "session_id": data["session_id"],
+            "last_seen": data["last_seen"].isoformat(),
+            "ip": data["ip"],
+            "user_agent": data["user_agent"]
+        }
+        for key, data in active_users.items()
+        if data["client_id"] == client_id
+    ]
+
+    return {
+        "active_users": active_count,
+        "sessions": active_sessions
+    }
+
+
+# Background task to clean up stale active users
+# @app.on_event("startup")
+# async def startup_event():
+#     # Start background cleanup thread
+#     cleanup_thread = threading.Thread(target=cleanup_stale_users, daemon=True)
+#     cleanup_thread.start()
+#     print("✅ Active users cleanup thread started")
+
+#     # Keep existing cleanup task
+#     async def cleanup_stale_users_async():
+#         while True:
+#             await asyncio.sleep(60)
+#             now = datetime.now()
+#             timeout = timedelta(seconds=45)
+
+#             with active_users_lock:
+#                 stale_keys = [
+#                     key for key, data in active_users.items()
+#                     if (now - data["last_seen"]) > timeout
+#                 ]
+#                 for key in stale_keys:
+#                     del active_users[key]
+
+#     asyncio.create_task(cleanup_stale_users_async())

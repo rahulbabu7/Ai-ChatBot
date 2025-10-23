@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { MessageCircle } from "lucide-react";
 import ChatbotWindow from "./ChatbotWindow";
 import { API_URL } from "../config.js";
+
 const Chatbot = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [clientId, setClientId] = useState("");
@@ -9,21 +10,33 @@ const Chatbot = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [clientName, setClientName] = useState("");
+  const [sessionId, setSessionId] = useState("");
+
+  const heartbeatInterval = useRef(null);
+
+  // Generate or retrieve session ID
+  useEffect(() => {
+    let storedSessionId = sessionStorage.getItem("chatbot_session_id");
+    if (!storedSessionId) {
+      storedSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      sessionStorage.setItem("chatbot_session_id", storedSessionId);
+    }
+    setSessionId(storedSessionId);
+  }, []);
 
   // Auto-detect domain and fetch client credentials
   useEffect(() => {
     const fetchClientCredentials = async () => {
       try {
         setIsLoading(true);
-
-        // Get current domain
         const params = new URLSearchParams(window.location.search);
         const clientDomain = params.get("domain");
         // const currentDomain = window.location.hostname;
-        // console.log("Detecting domain:", currentDomain);
+
         console.log("Detecting domain:", clientDomain);
-        // Call backend to lookup client by domain
+
         const response = await fetch(
+          // `${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(currentDomain)}`,
           `${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(clientDomain)}`,
         );
 
@@ -37,7 +50,6 @@ const Chatbot = () => {
         }
 
         const data = await response.json();
-
         setClientId(data.client_id);
         setChatbotKey(data.chatbot_key);
         setClientName(data.client_name);
@@ -47,15 +59,6 @@ const Chatbot = () => {
       } catch (err) {
         console.error("Failed to configure chatbot:", err);
         setError(err.message);
-
-        // Optional: Fallback to manual configuration for development
-        // if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        //   console.log("🔧 Development mode: Using fallback credentials");
-        //   setClientId("kochidigital_d0aef1");
-        //   setChatbotKey("535e999373d547139f7ad4e6969738c3");
-        //   setClientName("Development Client");
-        //   setError("");
-        // }
       } finally {
         setIsLoading(false);
       }
@@ -63,6 +66,96 @@ const Chatbot = () => {
 
     fetchClientCredentials();
   }, []);
+
+  // Send heartbeat when chatbot is open
+  useEffect(() => {
+    if (!clientId || !chatbotKey || !sessionId) return;
+
+    const sendHeartbeat = async (isOpen) => {
+      try {
+        await fetch(`${API_URL}/client/heartbeat/${clientId}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Chatbot-Key": chatbotKey,
+          },
+          body: JSON.stringify({
+            session_id: sessionId,
+            is_chatbot_open: isOpen,
+          }),
+        });
+      } catch (err) {
+        console.error("Heartbeat failed:", err);
+      }
+    };
+
+    if (isOpen) {
+      // Send initial heartbeat
+      sendHeartbeat(true);
+
+      // Send heartbeat every 15 seconds while open
+      heartbeatInterval.current = setInterval(() => {
+        sendHeartbeat(true);
+      }, 15000);
+    } else {
+      // Clear interval and send close signal
+      if (heartbeatInterval.current) {
+        clearInterval(heartbeatInterval.current);
+        heartbeatInterval.current = null;
+      }
+      sendHeartbeat(false);
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (heartbeatInterval.current) {
+        clearInterval(heartbeatInterval.current);
+      }
+      sendHeartbeat(false);
+    };
+  }, [isOpen, clientId, chatbotKey, sessionId]);
+
+  // Handle visibility change (user switches tabs)
+  useEffect(() => {
+    if (!clientId || !chatbotKey || !sessionId || !isOpen) return;
+
+    const handleVisibilityChange = async () => {
+      if (document.hidden) {
+        // User switched away - pause heartbeat but don't close
+        if (heartbeatInterval.current) {
+          clearInterval(heartbeatInterval.current);
+        }
+      } else {
+        // User came back - resume heartbeat
+        const sendHeartbeat = async () => {
+          try {
+            await fetch(`${API_URL}/client/heartbeat/${clientId}`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Chatbot-Key": chatbotKey,
+              },
+              body: JSON.stringify({
+                session_id: sessionId,
+                is_chatbot_open: true,
+              }),
+            });
+          } catch (err) {
+            console.error("Heartbeat failed:", err);
+          }
+        };
+
+        sendHeartbeat();
+        heartbeatInterval.current = setInterval(sendHeartbeat, 15000);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [isOpen, clientId, chatbotKey, sessionId]);
 
   const handleToggleChat = () => {
     if (!clientId || !chatbotKey) {
@@ -102,17 +195,17 @@ const Chatbot = () => {
         </div>
         <style>
           {`
-            @keyframes pulse {
-              0%, 100% { opacity: 1; }
-              50% { opacity: 0.5; }
-            }
-          `}
+                    @keyframes pulse {
+                      0%, 100% { opacity: 1; }
+                      50% { opacity: 0.5; }
+                    }
+                  `}
         </style>
       </div>
     );
   }
 
-  // Error state (domain not registered)
+  // Error state
   if (error && !clientId) {
     return (
       <div
@@ -123,7 +216,6 @@ const Chatbot = () => {
           zIndex: 1000,
         }}
       >
-        {/* Error message tooltip */}
         <div
           style={{
             backgroundColor: "white",
@@ -142,7 +234,6 @@ const Chatbot = () => {
           ⚠️ {error}
         </div>
 
-        {/* Disabled chat button */}
         <button
           onMouseEnter={() => {
             document.getElementById("error-tooltip").style.display = "block";
@@ -172,39 +263,19 @@ const Chatbot = () => {
     );
   }
 
-  // Active chatbot
   return (
     <div
       style={{ position: "fixed", bottom: "20px", right: "20px", zIndex: 1000 }}
     >
-      {/* Client name badge (only show when chat is closed) */}
-      {/* {clientName && !isOpen && (
-        <div
-          style={{
-            backgroundColor: "white",
-            padding: "6px 12px",
-            borderRadius: "20px",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-            marginBottom: "8px",
-            fontSize: "12px",
-            color: "#6b7280",
-            textAlign: "center",
-            border: "1px solid #e5e7eb",
-          }}
-        >
-        </div>
-      )}*/}
-
-      {/* Chat Window */}
       {isOpen && (
         <ChatbotWindow
           clientId={clientId}
           chatbotKey={chatbotKey}
+          sessionId={sessionId}
           onClose={() => setIsOpen(false)}
         />
       )}
 
-      {/* Chat Button - Only show when chat window is closed */}
       {!isOpen && (
         <button
           onClick={handleToggleChat}

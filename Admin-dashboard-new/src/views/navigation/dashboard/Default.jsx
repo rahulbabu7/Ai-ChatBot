@@ -8,211 +8,230 @@ import Row from 'react-bootstrap/Row';
 import Card from 'react-bootstrap/Card';
 import Spinner from 'react-bootstrap/Spinner';
 import ListGroup from 'react-bootstrap/ListGroup';
+import Badge from 'react-bootstrap/Badge';
 
-// Chart.js for graphs
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-} from 'chart.js';
-import { Line, Bar } from 'react-chartjs-2';
+// Chart.js
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend } from 'chart.js';
+import { Line } from 'react-chartjs-2';
 
-// Register ChartJS components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend
-);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend);
 
 export default function DefaultPage() {
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState('');
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // Dashboard stats from new endpoint
   const [totalSessions, setTotalSessions] = useState(0);
-  const [activeSessions, setActiveSessions] = useState(0);
+  const [todaySessions, setTodaySessions] = useState(0);
+  const [todayVisitors, setTodayVisitors] = useState(0);
+  const [activeUsersNow, setActiveUsersNow] = useState(0);
+
+  // Active users details
+  const [activeUsersList, setActiveUsersList] = useState([]);
+
+  // Graph data
   const [dailyStats, setDailyStats] = useState([]);
   const [statsLoading, setStatsLoading] = useState(false);
 
   const chatContainerRef = useRef(null);
-
-  // Get JWT token from storage
   const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
 
-  // Fetch sessions on mount and set up polling for active sessions
+  // Fetch dashboard stats (all metrics in one call)
   useEffect(() => {
     if (!token) return;
 
-    const fetchSessions = () => {
-      axios
-        .get(`${API_URL}/client/sessions/me`, {
+    const fetchDashboardStats = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/client/stats/dashboard`, {
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`
           }
-        })
-        .then((res) => {
-          const sessionsData = res.data.sessions || [];
-          setSessions(sessionsData);
-          setSelectedSession('');
-          setChats([]);
-          setTotalSessions(sessionsData.length);
-          
-          // Calculate active sessions (sessions with activity in last 5 minutes)
-          const now = new Date();
-          const activeThreshold = 5 * 60 * 1000; // 5 minutes in milliseconds
-          
-          const activeCount = sessionsData.filter(session => {
-            const lastActivity = session.last_activity ? new Date(session.last_activity) : 
-                              session.created_at ? new Date(session.created_at) : now;
-            return (now - lastActivity) < activeThreshold;
-          }).length;
-          
-          setActiveSessions(activeCount);
-        })
-        .catch(() => {
-          setSessions([]);
-          setTotalSessions(0);
-          setActiveSessions(0);
         });
+
+        console.log('📊 Dashboard stats:', res.data);
+
+        setTotalSessions(res.data.total_sessions);
+        setTodaySessions(res.data.today_sessions);
+        setTodayVisitors(res.data.today_visitors);
+        setActiveUsersNow(res.data.active_users_now);
+      } catch (error) {
+        console.error('❌ Failed to fetch dashboard stats:', error);
+      }
     };
 
-    // Initial fetch
-    fetchSessions();
+    fetchDashboardStats();
+    const intervalId = setInterval(fetchDashboardStats, 5000); // Refresh every 5 seconds
 
-    // Set up polling for active sessions every 30 seconds
-    const intervalId = setInterval(fetchSessions, 30000);
-
-    // Cleanup interval on component unmount
     return () => clearInterval(intervalId);
   }, [token]);
 
-  // Fetch daily stats for the graph
+  // Fetch active users details
   useEffect(() => {
     if (!token) return;
 
-    setStatsLoading(true);
-    axios
-      .get(`${API_URL}/client/stats/daily`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
-      })
-      .then((res) => {
-        setDailyStats(res.data.daily_stats || []);
-      })
-      .catch(() => {
-        setDailyStats([]);
-      })
-      .finally(() => {
-        setStatsLoading(false);
-      });
-  }, [token]);
-
-  // Fetch chats whenever a session is selected
-  useEffect(() => {
-    if (!token || !selectedSession) return;
-
-    setLoading(true);
-    axios
-      .get(
-        `${API_URL}/client/chats/me?session_id=${selectedSession}`,
-        {
+    const fetchActiveUsers = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/client/active-users/me`, {
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`
           }
-        }
-      )
-      .then((res) => setChats(res.data.chats || []))
-      .catch(() => setChats([]))
-      .finally(() => setLoading(false));
+        });
+
+        setActiveUsersList(res.data.sessions || []);
+      } catch (error) {
+        console.error('❌ Failed to fetch active users list:', error);
+        setActiveUsersList([]);
+      }
+    };
+
+    fetchActiveUsers();
+    const intervalId = setInterval(fetchActiveUsers, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [token]);
+
+  // Fetch daily stats for graph
+  useEffect(() => {
+    if (!token) return;
+
+    const fetchDailyStats = async () => {
+      setStatsLoading(true);
+      try {
+        const res = await axios.get(`${API_URL}/client/stats/daily`, {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          }
+        });
+
+        console.log('📈 Daily stats:', res.data);
+        setDailyStats(res.data.daily_stats || []);
+      } catch (error) {
+        console.error('❌ Failed to fetch daily stats:', error);
+        setDailyStats([]);
+      } finally {
+        setStatsLoading(false);
+      }
+    };
+
+    fetchDailyStats();
+
+    // Refresh daily stats every 60 seconds
+    const intervalId = setInterval(fetchDailyStats, 60000);
+
+    return () => clearInterval(intervalId);
+  }, [token]);
+
+  // Fetch sessions
+  useEffect(() => {
+    if (!token) return;
+
+    const fetchSessions = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/client/sessions/me`, {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          }
+        });
+
+        const sessionsData = res.data.sessions || [];
+        setSessions(sessionsData);
+      } catch (error) {
+        console.error('❌ Failed to fetch sessions:', error);
+        setSessions([]);
+      }
+    };
+
+    fetchSessions();
+    const intervalId = setInterval(fetchSessions, 30000);
+
+    return () => clearInterval(intervalId);
+  }, [token]);
+
+  // Fetch chats when session selected
+  useEffect(() => {
+    if (!token || !selectedSession) return;
+
+    const fetchChats = async () => {
+      setLoading(true);
+      try {
+        const res = await axios.get(`${API_URL}/client/chats/me?session_id=${selectedSession}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          }
+        });
+        setChats(res.data.chats || []);
+      } catch (error) {
+        console.error('❌ Failed to fetch chats:', error);
+        setChats([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchChats();
   }, [token, selectedSession]);
 
-  // Scroll chat to bottom when chats update
+  // Auto-scroll chat
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [chats]);
 
-  // Generate mock data if API doesn't have daily stats endpoint
-  const generateMockDailyData = () => {
-    const days = 7;
-    const mockData = [];
-    const today = new Date();
-    
-    for (let i = days - 1; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      
-      mockData.push({
-        date: date.toISOString().split('T')[0],
-        visitors: Math.floor(Math.random() * 50) + 10,
-        chats: Math.floor(Math.random() * 30) + 5,
-      });
-    }
-    
-    return mockData;
-  };
-
   // Prepare chart data
   const chartData = {
-    labels: (dailyStats.length > 0 ? dailyStats : generateMockDailyData()).map(stat => {
+    labels: dailyStats.map((stat) => {
       const date = new Date(stat.date);
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     }),
     datasets: [
       {
         label: 'Daily Visitors',
-        data: (dailyStats.length > 0 ? dailyStats : generateMockDailyData()).map(stat => stat.visitors),
+        data: dailyStats.map((stat) => stat.visitors),
         borderColor: 'rgb(75, 192, 192)',
         backgroundColor: 'rgba(75, 192, 192, 0.2)',
         tension: 0.4,
-        fill: true,
+        fill: true
       },
       {
         label: 'Daily Chats',
-        data: (dailyStats.length > 0 ? dailyStats : generateMockDailyData()).map(stat => stat.chats),
+        data: dailyStats.map((stat) => stat.chats),
         borderColor: 'rgb(255, 99, 132)',
         backgroundColor: 'rgba(255, 99, 132, 0.2)',
         tension: 0.4,
-        fill: true,
+        fill: true
       }
-    ],
+    ]
   };
 
   const chartOptions = {
     responsive: true,
+    maintainAspectRatio: false,
     plugins: {
       legend: {
-        position: 'top',
+        position: 'top'
       },
       title: {
         display: true,
-        text: 'Daily Visitors & Chats',
-      },
+        text: 'Last 7 Days - Visitors & Chats'
+      }
     },
     scales: {
       y: {
         beginAtZero: true,
         ticks: {
-          stepSize: 10,
-        },
-      },
-    },
+          stepSize: 1,
+          precision: 0
+        }
+      }
+    }
   };
 
   if (!token) {
@@ -221,53 +240,128 @@ export default function DefaultPage() {
 
   return (
     <>
-      {/* Stats Cards - Horizontal at the top */}
+      {/* Stats Cards */}
       <Row className="mb-4">
-        <Col md={4} className="mb-3">
+        <Col md={3} className="mb-3">
           <Card className="text-center shadow-sm border-0 h-100 bg-info text-white">
             <Card.Body className="d-flex flex-column justify-content-center">
               <h6 className="mb-1">Total Sessions</h6>
               <h2 className="fw-bold mb-0">{totalSessions}</h2>
+              <small className="opacity-75">All time</small>
             </Card.Body>
           </Card>
         </Col>
-        <Col md={4} className="mb-3">
+
+        <Col md={3} className="mb-3">
+          <Card className="text-center shadow-sm border-0 h-100 bg-danger text-white position-relative">
+            <Card.Body className="d-flex flex-column justify-content-center">
+              <div className="position-absolute top-0 end-0 m-2">
+                <span className="badge bg-light text-danger">
+                  <span className="spinner-grow spinner-grow-sm me-1" role="status"></span>
+                  LIVE
+                </span>
+              </div>
+              <h6 className="mb-1">Active Users Now</h6>
+              <h2 className="fw-bold mb-0">{activeUsersNow}</h2>
+              <small className="opacity-75">Chatbot open</small>
+            </Card.Body>
+          </Card>
+        </Col>
+
+        <Col md={3} className="mb-3">
           <Card className="text-center shadow-sm border-0 h-100 bg-success text-white">
             <Card.Body className="d-flex flex-column justify-content-center">
-              <h6 className="mb-1">Active Sessions</h6>
-              <h2 className="fw-bold mb-0">{activeSessions}</h2>
-              <small className="opacity-75">Last 5 minutes</small>
+              <h6 className="mb-1">Today's Sessions</h6>
+              <h2 className="fw-bold mb-0">{todaySessions}</h2>
+              <small className="opacity-75">Unique conversations</small>
             </Card.Body>
           </Card>
         </Col>
-        <Col md={4} className="mb-3">
+
+        <Col md={3} className="mb-3">
           <Card className="text-center shadow-sm border-0 h-100 bg-warning text-dark">
             <Card.Body className="d-flex flex-column justify-content-center">
-              <h6 className="mb-1">Daily Visitors</h6>
-              <h2 className="fw-bold mb-0">
-                {dailyStats.length > 0 
-                  ? dailyStats[dailyStats.length - 1]?.visitors || 0
-                  : generateMockDailyData()[generateMockDailyData().length - 1]?.visitors || 0
-                }
-              </h2>
-              <small className="opacity-75">Today</small>
+              <h6 className="mb-1">Today's Visitors</h6>
+              <h2 className="fw-bold mb-0">{todayVisitors}</h2>
+              <small className="opacity-75">Unique users</small>
             </Card.Body>
           </Card>
         </Col>
       </Row>
 
+      {/* Active Users Details */}
+      {activeUsersNow > 0 && (
+        <Row className="mb-4">
+          <Col>
+            <Card className="shadow-sm border-success">
+              <Card.Header className="bg-success text-white d-flex justify-content-between align-items-center">
+                <h5 className="mb-0">🟢 Active Users Right Now ({activeUsersNow})</h5>
+                <Badge bg="light" text="success">
+                  <span className="spinner-grow spinner-grow-sm me-1"></span>
+                  LIVE
+                </Badge>
+              </Card.Header>
+              <Card.Body style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                <ListGroup>
+                  {activeUsersList.map((user, idx) => {
+                    // Calculate seconds ago from last_seen
+                    const lastSeenDate = new Date(user.last_seen);
+                    const now = new Date();
+                    const secondsAgo = Math.floor((now - lastSeenDate) / 1000);
+
+                    return (
+                      <ListGroup.Item key={idx} className="d-flex justify-content-between align-items-start">
+                        <div className="flex-grow-1">
+                          <div className="d-flex align-items-center mb-1">
+                            <span className="badge bg-success me-2">●</span>
+                            <strong>Session:</strong>
+                            <code className="ms-2 small">{user.session_id.substring(0, 30)}...</code>
+                          </div>
+                          <div className="small text-muted">
+                            <div>📍 IP: {user.ip}</div>
+                            <div className="text-truncate" style={{ maxWidth: '500px' }}>
+                              🖥️ {user.user_agent.substring(0, 80)}...
+                            </div>
+                          </div>
+                        </div>
+                        <Badge bg="success" pill>
+                          {secondsAgo}s ago
+                        </Badge>
+                      </ListGroup.Item>
+                    );
+                  })}
+                </ListGroup>
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
+      )}
+
       {/* Graph Section */}
       <Row className="mb-4">
         <Col>
           <Card className="shadow-sm">
-            <Card.Header>
-              <h5 className="mb-0">Daily Analytics</h5>
+            <Card.Header className="d-flex justify-content-between align-items-center">
+              <h5 className="mb-0">Daily Analytics (Last 7 Days)</h5>
+              {!statsLoading && dailyStats.length > 0 && (
+                <small className="text-muted">
+                  Total: {dailyStats.reduce((sum, s) => sum + s.visitors, 0)} visitors, {dailyStats.reduce((sum, s) => sum + s.chats, 0)}{' '}
+                  chats
+                </small>
+              )}
             </Card.Header>
             <Card.Body>
               {statsLoading ? (
                 <div className="d-flex justify-content-center align-items-center" style={{ height: '300px' }}>
                   <Spinner animation="border" />
                   <span className="ms-2">Loading analytics...</span>
+                </div>
+              ) : dailyStats.length === 0 || dailyStats.every((s) => s.visitors === 0 && s.chats === 0) ? (
+                <div className="d-flex justify-content-center align-items-center" style={{ height: '300px' }}>
+                  <div className="text-center text-muted">
+                    <p className="mb-2">📊 No chat data yet</p>
+                    <small>Start chatting to see analytics</small>
+                  </div>
                 </div>
               ) : (
                 <div style={{ height: '300px' }}>
@@ -279,56 +373,73 @@ export default function DefaultPage() {
         </Col>
       </Row>
 
-      {/* Main Content */}
+      {/* Chat History */}
       <Row>
-        {/* Sidebar (Sessions) */}
         <Col md={4} xl={3}>
           <Card className="shadow-sm h-100">
             <Card.Header>
-              <h5 className="mb-0">Sessions</h5>
+              <h5 className="mb-0">Chat Sessions ({sessions.length})</h5>
             </Card.Header>
-            <Card.Body>
+            <Card.Body style={{ maxHeight: '70vh', overflowY: 'auto' }}>
               {sessions.length > 0 ? (
                 <ListGroup>
                   {sessions.map((s) => (
-                    <ListGroup.Item key={s} action active={selectedSession === s} onClick={() => setSelectedSession(s)}>
-                      Session {s}
+                    <ListGroup.Item
+                      key={s}
+                      action
+                      active={selectedSession === s}
+                      onClick={() => setSelectedSession(s)}
+                      className="d-flex justify-content-between align-items-center"
+                    >
+                      <span className="text-truncate">{s.substring(0, 25)}...</span>
+                      {selectedSession === s && <Badge bg="primary">Selected</Badge>}
                     </ListGroup.Item>
                   ))}
                 </ListGroup>
               ) : (
-                <p className="text-muted">No sessions available</p>
+                <p className="text-muted text-center mt-4">No sessions available</p>
               )}
             </Card.Body>
           </Card>
         </Col>
 
-        {/* Chat Area */}
         <Col md={8} xl={9}>
           <Card className="shadow-sm h-100">
             <Card.Header>
-              <h5 className="mb-0">Chats</h5>
+              <h5 className="mb-0">{selectedSession ? `Chat: ${selectedSession.substring(0, 30)}...` : 'Select a session'}</h5>
             </Card.Header>
-            <Card.Body ref={chatContainerRef} className="chat-messages p-2" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            <Card.Body
+              ref={chatContainerRef}
+              className="chat-messages p-3"
+              style={{ maxHeight: '70vh', overflowY: 'auto', backgroundColor: '#f8f9fa' }}
+            >
               {loading ? (
                 <div className="d-flex justify-content-center align-items-center h-100">
                   <Spinner animation="border" />
                   <span className="ms-2">Loading chats...</span>
                 </div>
               ) : chats.length === 0 ? (
-                <p className="text-muted">Select a session to view chats</p>
+                <div className="text-center text-muted mt-5">
+                  <p>Select a session to view chats</p>
+                </div>
               ) : (
                 chats.map((chat, i) => (
                   <div
                     key={i}
-                    className={`chat-message mb-3 p-2 rounded ${
-                      chat.role === 'user' ? 'bg-primary text-white text-end' : 'bg-light border text-start'
+                    className={`chat-message mb-3 p-3 rounded ${
+                      chat.role === 'user' ? 'bg-primary text-white ms-auto' : 'bg-white border me-auto'
                     }`}
+                    style={{ maxWidth: '75%' }}
                   >
-                    <div>{chat.message}</div>
-                    <div className="small text-muted mt-1">
-                      [{chat.role}] {new Date(chat.created_at).toLocaleString()} | UA: {chat.user_agent} | Country:{' '}
-                      {chat.country_code || 'Unknown'}
+                    <div className="mb-2">{chat.message}</div>
+                    <div className={`small mt-2 ${chat.role === 'user' ? 'text-white-50' : 'text-muted'}`}>
+                      <div>
+                        <strong>[{chat.role}]</strong> {new Date(chat.created_at).toLocaleString()}
+                      </div>
+                      <div className="text-truncate">
+                        {chat.country_code && `🌍 ${chat.country_code} | `}
+                        🖥️ {chat.user_agent.substring(0, 50)}...
+                      </div>
                     </div>
                   </div>
                 ))
