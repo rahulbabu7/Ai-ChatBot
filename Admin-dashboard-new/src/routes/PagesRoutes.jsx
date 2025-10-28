@@ -9,6 +9,7 @@ const ForgotPasswordPage = Loadable(lazy(() => import('views/auth/forgot-passwor
 const AdminDashboard = Loadable(lazy(() => import('views/navigation/dashboard/AdminDashboard')));
 const ClientDashboard = Loadable(lazy(() => import('views/navigation/dashboard/Dashboard')));
 const DomainIntegration = Loadable(lazy(() => import('views/navigation/dashboard/Domain')));
+const AdminChat = Loadable(lazy(()=>import('views/navigation/dashboard/AdminChatPage')))
 
 const PagesRoutes = {
   path: '/',
@@ -28,7 +29,8 @@ const PagesRoutes = {
       children: [
         // { path: 'dashboard-admin', element: <AdminDashboard /> },
         { path: 'dashboard', element: <ClientDashboard /> }, // ✅ fixed route
-        { path: 'domain', element: <DomainIntegration /> }
+        { path: 'domain', element: <DomainIntegration /> },
+        { path: 'client-chat/:sessionId', element: <AdminChat /> }
       ]
     }
   ]

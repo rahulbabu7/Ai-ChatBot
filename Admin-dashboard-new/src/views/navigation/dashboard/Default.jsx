@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../../config';
@@ -9,6 +10,7 @@ import Card from 'react-bootstrap/Card';
 import Spinner from 'react-bootstrap/Spinner';
 import ListGroup from 'react-bootstrap/ListGroup';
 import Badge from 'react-bootstrap/Badge';
+import Button from 'react-bootstrap/Button';
 
 // Chart.js
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend } from 'chart.js';
@@ -17,6 +19,7 @@ import { Line } from 'react-chartjs-2';
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend);
 
 export default function DefaultPage() {
+  const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState('');
   const [chats, setChats] = useState([]);
@@ -63,7 +66,7 @@ export default function DefaultPage() {
     };
 
     fetchDashboardStats();
-    const intervalId = setInterval(fetchDashboardStats, 5000); // Refresh every 5 seconds
+    const intervalId = setInterval(fetchDashboardStats, 5000);
 
     return () => clearInterval(intervalId);
   }, [token]);
@@ -119,8 +122,6 @@ export default function DefaultPage() {
     };
 
     fetchDailyStats();
-
-    // Refresh daily stats every 60 seconds
     const intervalId = setInterval(fetchDailyStats, 60000);
 
     return () => clearInterval(intervalId);
@@ -289,7 +290,7 @@ export default function DefaultPage() {
         </Col>
       </Row>
 
-      {/* Active Users Details */}
+      {/* Active Users Details - NOW CLICKABLE */}
       {activeUsersNow > 0 && (
         <Row className="mb-4">
           <Col>
@@ -304,18 +305,24 @@ export default function DefaultPage() {
               <Card.Body style={{ maxHeight: '300px', overflowY: 'auto' }}>
                 <ListGroup>
                   {activeUsersList.map((user, idx) => {
-                    // Calculate seconds ago from last_seen
                     const lastSeenDate = new Date(user.last_seen);
                     const now = new Date();
                     const secondsAgo = Math.floor((now - lastSeenDate) / 1000);
 
                     return (
-                      <ListGroup.Item key={idx} className="d-flex justify-content-between align-items-start">
+                      <ListGroup.Item 
+                        key={idx} 
+                        className="d-flex justify-content-between align-items-start"
+                        action
+                        onClick={() => navigate(`/client-chat/${user.session_id}`)}
+                        style={{ cursor: 'pointer' }}
+                      >
                         <div className="flex-grow-1">
                           <div className="d-flex align-items-center mb-1">
                             <span className="badge bg-success me-2">●</span>
                             <strong>Session:</strong>
                             <code className="ms-2 small">{user.session_id.substring(0, 30)}...</code>
+                            <Badge bg="primary" className="ms-2">Click to Chat</Badge>
                           </div>
                           <div className="small text-muted">
                             <div>📍 IP: {user.ip}</div>
@@ -345,8 +352,8 @@ export default function DefaultPage() {
               <h5 className="mb-0">Daily Analytics (Last 7 Days)</h5>
               {!statsLoading && dailyStats.length > 0 && (
                 <small className="text-muted">
-                  Total: {dailyStats.reduce((sum, s) => sum + s.visitors, 0)} visitors, {dailyStats.reduce((sum, s) => sum + s.chats, 0)}{' '}
-                  chats
+                  Total: {dailyStats.reduce((sum, s) => sum + s.visitors, 0)} visitors,{' '}
+                  {dailyStats.reduce((sum, s) => sum + s.chats, 0)} chats
                 </small>
               )}
             </Card.Header>
@@ -379,21 +386,34 @@ export default function DefaultPage() {
           <Card className="shadow-sm h-100">
             <Card.Header>
               <h5 className="mb-0">Chat Sessions ({sessions.length})</h5>
+              <small className="text-muted">Click to view or chat</small>
             </Card.Header>
             <Card.Body style={{ maxHeight: '70vh', overflowY: 'auto' }}>
               {sessions.length > 0 ? (
                 <ListGroup>
                   {sessions.map((s) => (
-                    <ListGroup.Item
-                      key={s}
-                      action
-                      active={selectedSession === s}
-                      onClick={() => setSelectedSession(s)}
-                      className="d-flex justify-content-between align-items-center"
-                    >
-                      <span className="text-truncate">{s.substring(0, 25)}...</span>
-                      {selectedSession === s && <Badge bg="primary">Selected</Badge>}
-                    </ListGroup.Item>
+                    <div key={s}>
+                      <ListGroup.Item
+                        action
+                        active={selectedSession === s}
+                        onClick={() => setSelectedSession(s)}
+                        className="d-flex justify-content-between align-items-center mb-2"
+                      >
+                        <span className="text-truncate">{s.substring(0, 25)}...</span>
+                        {selectedSession === s && <Badge bg="primary">Viewing</Badge>}
+                      </ListGroup.Item>
+                      
+                      {/* {selectedSession === s && (
+                        <Button
+                          variant="success"
+                          size="sm"
+                          className="w-100 mb-2"
+                          onClick={() => navigate(`/client-chat/${s}`)}
+                        >
+                          💬 Open Admin Chat
+                        </Button>
+                      )}*/}
+                    </div>
                   ))}
                 </ListGroup>
               ) : (
@@ -405,8 +425,19 @@ export default function DefaultPage() {
 
         <Col md={8} xl={9}>
           <Card className="shadow-sm h-100">
-            <Card.Header>
-              <h5 className="mb-0">{selectedSession ? `Chat: ${selectedSession.substring(0, 30)}...` : 'Select a session'}</h5>
+            <Card.Header className="d-flex justify-content-between align-items-center">
+              <h5 className="mb-0">
+                {selectedSession ? `Chat: ${selectedSession.substring(0, 30)}...` : 'Select a session'}
+              </h5>
+              {selectedSession && (
+                <Button
+                  variant="success"
+                  size="sm"
+                  onClick={() => navigate(`/client-chat/${selectedSession}`)}
+                >
+                  💬 Open in Admin Chat
+                </Button>
+              )}
             </Card.Header>
             <Card.Body
               ref={chatContainerRef}

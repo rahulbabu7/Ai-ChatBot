@@ -31,17 +31,19 @@ def init_db():
 
     # Chats table (per client, per user session)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS chats (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            client_id TEXT NOT NULL,
-            session_id TEXT NOT NULL,
-            role TEXT NOT NULL,
-            message TEXT NOT NULL,
-            user_agent TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            country_code TEXT DEFAULT 'unknown'
-        )
-    """)
+            CREATE TABLE IF NOT EXISTS chats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                message TEXT NOT NULL,
+                user_agent TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                country_code TEXT DEFAULT 'unknown',
+                admin_override INTEGER DEFAULT 0,
+                is_active INTEGER DEFAULT 1
+            )
+        """)
 
     # Domain mappings table (NEW)
     cursor.execute("""
@@ -71,6 +73,7 @@ def init_db():
     # Create indexes for better performance
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_chats_client_session ON chats(client_id, session_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_domain_mappings_domain ON domain_mappings(domain)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_chats_is_active ON chats(is_active)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_client ON tasks(client_id)")
     conn.commit()
     conn.close()

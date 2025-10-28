@@ -93,6 +93,8 @@ class DailyStats(BaseModel):
 class StatsResponse(BaseModel):
     daily_stats: List[DailyStats]
 
+class AdminReplyRequest(BaseModel):
+    message: str
 
 # ----------------------------
 # AUTH
@@ -243,15 +245,11 @@ def context_endpoint(client_id: str, req: ChatRequest, x_chatbot_key: str = Head
 async def get_chats(session_id: str, client_id: str = Depends(get_client_from_header)):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT session_id, role, message, user_agent, country_code, created_at
-        FROM chats
-        WHERE client_id=? AND session_id=?
+    cursor.execute("""
+        SELECT * FROM chats
+        WHERE client_id=? AND session_id=? AND is_active=1
         ORDER BY created_at ASC
-    """,
-        (client_id, session_id),
-    )
+    """, (client_id, session_id))
     chats = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return {"chats": chats}
@@ -1017,3 +1015,253 @@ async def get_active_users(client_id: str = Depends(get_client_from_header)):
 #                     del active_users[key]
 
 #     asyncio.create_task(cleanup_stale_users_async())
+
+
+# @app.post("/client/client-reply/{session_id}")
+# async def admin_reply(
+#     session_id: str,
+#     req: AdminReplyRequest,
+#     client_id: str = Depends(get_client_from_header)
+# ):
+#     """Admin sends a manual reply to override chatbot"""
+#     conn = get_db()
+#     cursor = conn.cursor()
+
+#     try:
+#         # First, find the last assistant message ID
+#         cursor.execute("""
+#             SELECT id FROM chats
+#             WHERE client_id=? AND session_id=? AND role='assistant' AND is_active=1
+#             ORDER BY created_at DESC LIMIT 1
+#         """, (client_id, session_id))
+        
+#         last_assistant = cursor.fetchone()
+        
+#         # Mark it as inactive if it exists
+#         updated_rows = 0
+#         if last_assistant:
+#             cursor.execute("""
+#                 UPDATE chats
+#                 SET is_active = 0
+#                 WHERE id = ?
+#             """, (last_assistant['id'],))
+#             updated_rows = cursor.rowcount
+        
+#         print(f"✅ Marked {updated_rows} previous assistant messages as inactive")
+
+#         # Insert admin's override message
+#         cursor.execute("""
+#             INSERT INTO chats (client_id, session_id, role, message, admin_override, user_agent, is_active)
+#             VALUES (?, ?, 'assistant', ?, 1, 'admin-override', 1)
+#         """, (client_id, session_id, req.message))
+
+#         conn.commit()
+#         print(f"✅ Admin reply inserted successfully for session {session_id}")
+        
+#         return {
+#             "success": True, 
+#             "message": "Admin reply sent successfully",
+#             "previous_messages_deactivated": updated_rows
+#         }
+
+#     except Exception as e:
+#         conn.rollback()
+#         print(f"❌ Failed to send admin reply: {str(e)}")
+#         import traceback
+#         traceback.print_exc()
+#         raise HTTPException(
+#             status_code=500, 
+#             detail=f"Failed to send admin reply: {str(e)}"
+#         )
+#     finally:
+#         conn.close()
+
+@app.post("/client/client-reply/{session_id}")
+async def admin_reply(
+    session_id: str,
+    req: AdminReplyRequest,
+    client_id: str = Depends(get_client_from_header)
+):
+    """Admin sends a manual reply to override chatbot"""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        # DON'T mark previous messages as inactive - just insert the admin reply
+        # The admin_override flag will distinguish it from bot messages
+        # If you want to replace the last bot message, uncomment below:
+        
+        # cursor.execute("""
+        #     SELECT id FROM chats
+        #     WHERE client_id=? AND session_id=? AND role='assistant' 
+        #     AND admin_override=0 AND is_active=1
+        #     ORDER BY created_at DESC LIMIT 1
+        # """, (client_id, session_id))
+        # 
+        # last_bot_message = cursor.fetchone()
+        # if last_bot_message:
+        #     cursor.execute("""
+        #         UPDATE chats SET is_active = 0 WHERE id = ?
+        #     """, (last_bot_message['id'],))
+        
+        print(f"✅ Inserting admin override message")
+
+        # Insert admin's override message
+        cursor.execute("""
+            INSERT INTO chats (client_id, session_id, role, message, admin_override, user_agent, is_active)
+            VALUES (?, ?, 'assistant', ?, 1, 'admin-override', 1)
+        """, (client_id, session_id, req.message))
+
+        conn.commit()
+        print(f"✅ Admin reply inserted successfully for session {session_id}")
+        
+        return {
+            "success": True, 
+            "message": "Admin reply sent successfully"
+        }
+
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ Failed to send admin reply: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to send admin reply: {str(e)}"
+        )
+    finally:
+        conn.close()
+@app.get("/client/session-details/{session_id}")
+async def get_session_details(
+    session_id: str,
+    client_id: str = Depends(get_client_from_header)
+):
+    """Get full session details including user info and chat history"""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        # Get all active chats for this session
+        cursor.execute("""
+            SELECT id, role, message, created_at, admin_override, country_code, user_agent
+            FROM chats
+            WHERE client_id=? AND session_id=? AND is_active=1
+            ORDER BY created_at ASC
+        """, (client_id, session_id))
+
+        chats = [dict(row) for row in cursor.fetchall()]
+
+        # Get session metadata (first message info)
+        cursor.execute("""
+            SELECT country_code, user_agent, MIN(created_at) as started_at
+            FROM chats
+            WHERE client_id=? AND session_id=?
+            GROUP BY session_id
+        """, (client_id, session_id))
+
+        session_info = cursor.fetchone()
+
+        return {
+            "session_id": session_id,
+            "chats": chats,
+            "session_info": dict(session_info) if session_info else {},
+            "total_messages": len(chats)
+        }
+
+    finally:
+        conn.close()
+
+
+@app.get("/client/active-sessions/me")
+async def get_active_sessions(client_id: str = Depends(get_client_from_header)):
+    """Get sessions that have recent activity (last 24 hours)"""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT
+                session_id,
+                MAX(created_at) as last_activity,
+                COUNT(*) as message_count,
+                MAX(CASE WHEN role='user' THEN message END) as last_user_message,
+                country_code,
+                user_agent
+            FROM chats
+            WHERE client_id=?
+                AND created_at >= datetime('now', '-24 hours')
+                AND is_active=1
+            GROUP BY session_id
+            ORDER BY last_activity DESC
+        """, (client_id,))
+
+        sessions = [dict(row) for row in cursor.fetchall()]
+
+        return {"active_sessions": sessions, "count": len(sessions)}
+
+    finally:
+        conn.close()
+
+
+@app.delete("/client/delete-chat/{chat_id}")
+async def delete_chat_message(
+    chat_id: int,
+    client_id: str = Depends(get_client_from_header)
+):
+    """Soft delete a specific chat message"""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        # Verify ownership and mark as inactive
+        cursor.execute("""
+            UPDATE chats
+            SET is_active = 0
+            WHERE id=? AND client_id=?
+        """, (chat_id, client_id))
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Chat message not found")
+
+        conn.commit()
+        return {"success": True, "message": "Chat message deleted"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete message: {str(e)}")
+    finally:
+        conn.close()
+
+
+
+@app.get("/client/chat-history/{client_id}/{session_id}")
+def get_public_chat_history(
+    client_id: str,
+    session_id: str,
+    x_chatbot_key: str = Header(None)
+):
+    """Public endpoint for chatbot widget to get chat history"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Validate client + chatbot_key
+    cursor.execute("SELECT * FROM users WHERE client_id=? AND chatbot_key=?", (client_id, x_chatbot_key))
+    client = cursor.fetchone()
+    
+    if not client:
+        raise HTTPException(status_code=403, detail="Invalid client or key")
+    
+    # Get all active chats for this session
+    cursor.execute("""
+        SELECT id, role, message, created_at, admin_override, country_code, user_agent
+        FROM chats
+        WHERE client_id=? AND session_id=? AND is_active=1
+        ORDER BY created_at ASC
+    """, (client_id, session_id))
+    
+    chats = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    return {"chats": chats}

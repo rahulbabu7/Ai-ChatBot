@@ -30,14 +30,14 @@ const Chatbot = () => {
       try {
         setIsLoading(true);
         const params = new URLSearchParams(window.location.search);
-        const clientDomain = params.get("domain");
-        // const currentDomain = window.location.hostname;
+        // const clientDomain = params.get("domain");
+        const currentDomain = window.location.hostname;
 
-        console.log("Detecting domain:", clientDomain);
+        console.log("Detecting domain:", currentDomain);
 
         const response = await fetch(
-          // `${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(currentDomain)}`,
-          `${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(clientDomain)}`,
+          // `${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(clientDomain)}`,
+          `${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(currentDomain)}`,
         );
 
         if (!response.ok) {
@@ -195,11 +195,11 @@ const Chatbot = () => {
         </div>
         <style>
           {`
-                    @keyframes pulse {
-                      0%, 100% { opacity: 1; }
-                      50% { opacity: 0.5; }
-                    }
-                  `}
+            @keyframes pulse {
+              0%, 100% { opacity: 1; }
+              50% { opacity: 0.5; }
+            }
+          `}
         </style>
       </div>
     );
@@ -236,10 +236,12 @@ const Chatbot = () => {
 
         <button
           onMouseEnter={() => {
-            document.getElementById("error-tooltip").style.display = "block";
+            const tooltip = document.getElementById("error-tooltip");
+            if (tooltip) tooltip.style.display = "block";
           }}
           onMouseLeave={() => {
-            document.getElementById("error-tooltip").style.display = "none";
+            const tooltip = document.getElementById("error-tooltip");
+            if (tooltip) tooltip.style.display = "none";
           }}
           style={{
             width: "56px",
@@ -294,12 +296,12 @@ const Chatbot = () => {
             transition: "all 0.2s ease",
           }}
           onMouseOver={(e) => {
-            e.target.style.backgroundColor = "#5856f3";
-            e.target.style.transform = "scale(1.05)";
+            e.currentTarget.style.backgroundColor = "#5856f3";
+            e.currentTarget.style.transform = "scale(1.05)";
           }}
           onMouseOut={(e) => {
-            e.target.style.backgroundColor = "#6366f1";
-            e.target.style.transform = "scale(1)";
+            e.currentTarget.style.backgroundColor = "#6366f1";
+            e.currentTarget.style.transform = "scale(1)";
           }}
           title={`Chat with ${clientName || "Support"}`}
         >
