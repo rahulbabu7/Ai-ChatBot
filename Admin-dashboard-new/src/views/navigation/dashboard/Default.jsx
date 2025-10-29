@@ -429,7 +429,7 @@ export default function DefaultPage() {
               <h5 className="mb-0">
                 {selectedSession ? `Chat: ${selectedSession.substring(0, 30)}...` : 'Select a session'}
               </h5>
-              {selectedSession && (
+              {/* {selectedSession && (
                 <Button
                   variant="success"
                   size="sm"
@@ -437,7 +437,7 @@ export default function DefaultPage() {
                 >
                   💬 Open in Admin Chat
                 </Button>
-              )}
+              )}*/}
             </Card.Header>
             <Card.Body
               ref={chatContainerRef}
