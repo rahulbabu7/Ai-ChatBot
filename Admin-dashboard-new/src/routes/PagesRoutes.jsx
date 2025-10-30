@@ -10,6 +10,7 @@ const AdminDashboard = Loadable(lazy(() => import('views/navigation/dashboard/Ad
 const ClientDashboard = Loadable(lazy(() => import('views/navigation/dashboard/Dashboard')));
 const DomainIntegration = Loadable(lazy(() => import('views/navigation/dashboard/Domain')));
 const AdminChat = Loadable(lazy(()=>import('views/navigation/dashboard/AdminChatPage')))
+const Duration = Loadable(lazy(() => import('views/reporting/Duration')));
 
 const PagesRoutes = {
   path: '/',
@@ -30,7 +31,8 @@ const PagesRoutes = {
         // { path: 'dashboard-admin', element: <AdminDashboard /> },
         { path: 'dashboard', element: <ClientDashboard /> }, // ✅ fixed route
         { path: 'domain', element: <DomainIntegration /> },
-        { path: 'client-chat/:sessionId', element: <AdminChat /> }
+        { path: 'client-chat/:sessionId', element: <AdminChat /> },
+        { path: 'duration', element: <Duration /> }
       ]
     }
   ]

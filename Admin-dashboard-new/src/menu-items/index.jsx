@@ -6,11 +6,12 @@ import other from './other';
 import pages from './pages';
 import tableComponents from './tables';
 import uiComponents from './ui-components';
+import chatAnalysis from './chat-analysis';
 
 // ==============================|| MENU ITEMS ||============================== //
 
 const menuItems = {
-  items: [navigation]
+  items: [navigation, chatAnalysis]
 };
 
 export default menuItems;
