@@ -170,10 +170,10 @@
   resolved "https://registry.npmjs.org/@cush/relative/-/relative-1.0.0.tgz"
   integrity sha512-RpfLEtTlyIxeNPGKcokS+p3BZII/Q3bYxryFRglh5H3A3T8q9fsLYm72VYAMEOOIBLEa8o93kFLiBDUWKrwXZA==
 
-"@esbuild/linux-x64@0.25.10":
+"@esbuild/win32-x64@0.25.10":
   version "0.25.10"
-  resolved "https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.25.10.tgz"
-  integrity sha512-QSX81KhFoZGwenVyPoberggdW1nrQZSvfVDAIUXr3WqLRZGZqWk/P4T8p2SP+de2Sr5HPcvjhcJzEiulKgnxtA==
+  resolved "https://registry.npmjs.org/@esbuild/win32-x64/-/win32-x64-0.25.10.tgz"
+  integrity sha512-9KpxSVFCu0iK1owoez6aC/s/EdUQLDN3adTxGCqxMVhrPDj6bt5dbrHDXUuq+Bs2vATFBBrQS5vdQ/Ed2P+nbw==
 
 "@eslint-community/eslint-utils@^4.8.0":
   version "4.9.0"
@@ -416,15 +416,10 @@
     uncontrollable "^8.0.4"
     warning "^4.0.3"
 
-"@rollup/rollup-linux-x64-gnu@4.50.1":
+"@rollup/rollup-win32-x64-msvc@4.50.1":
   version "4.50.1"
-  resolved "https://registry.npmjs.org/@rollup/rollup-linux-x64-gnu/-/rollup-linux-x64-gnu-4.50.1.tgz"
-  integrity sha512-MCgtFB2+SVNuQmmjHf+wfI4CMxy3Tk8XjA5Z//A0AKD7QXUYFMQcns91K6dEHBvZPCnhJSyDWLApk40Iq/H3tA==
-
-"@rollup/rollup-linux-x64-musl@4.50.1":
-  version "4.50.1"
-  resolved "https://registry.npmjs.org/@rollup/rollup-linux-x64-musl/-/rollup-linux-x64-musl-4.50.1.tgz"
-  integrity sha512-nEvqG+0jeRmqaUMuwzlfMKwcIVffy/9KGbAGyoa26iu6eSngAYQ512bMXuqqPrlTyfqdlB9FVINs93j534UJrg==
+  resolved "https://registry.npmjs.org/@rollup/rollup-win32-x64-msvc/-/rollup-win32-x64-msvc-4.50.1.tgz"
+  integrity sha512-StxAO/8ts62KZVRAm4JZYq9+NqNsV7RvimNK+YM7ry//zebEH6meuugqW/P5OFUCjyQgui+9fUxT6d5NShvMvA==
 
 "@svgdotjs/svg.draggable.js@^3.0.4":
   version "3.0.6"
