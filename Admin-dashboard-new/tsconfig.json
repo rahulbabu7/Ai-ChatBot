@@ -21,11 +21,13 @@
       "@views/*": ["views/*"],
       "@utils/*": ["utils/*"]
     },
-
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    // 👇 Add this line
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist"]
