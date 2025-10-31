@@ -1,15 +1,17 @@
 import axios from 'axios';
-
+import { API_URL } from '../config';
 // Create axios instance with base configuration
 const apiService = axios.create({
-  baseURL: 'http://localhost:8000', // Replace with your actual backend URL
-  timeout: 10000,
+  baseURL: API_URL, // Replace with your actual backend URL
+  timeout: 10000
 });
 
 // Request interceptor to add auth token
 apiService.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
+    console.log('Token:', token ? 'Present' : 'Missing');
+    console.log('Request URL:', config.url);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
