@@ -15,6 +15,7 @@
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@fontsource/open-sans": "5.2.5",
+    "@mui/icons-material": "^7.3.4",
     "@mui/material": "^7.3.4",
     "@react-google-maps/api": "2.20.5",
     "apexcharts": "4.5.0",
