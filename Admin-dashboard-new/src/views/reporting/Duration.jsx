@@ -145,6 +145,82 @@ const Duration = () => {
     }
   };
 
+  // Handler for View All Sessions button
+  const handleViewAllSessions = () => {
+    // You can implement different behaviors here:
+    
+    // Option 1: Navigate to a dedicated sessions page
+    // history.push('/sessions'); // if using React Router
+    
+    // Option 2: Show all sessions in a modal/dialog
+    // setShowAllSessionsModal(true);
+    
+    // Option 3: Fetch and display all sessions (not just first 10)
+    fetchAllSessions();
+    
+    // Option 4: Console log for demonstration
+    console.log('View All Sessions clicked - would show all sessions');
+    
+    // For now, let's implement Option 3 as it's most useful
+    fetchAllSessions();
+  };
+
+  // Function to fetch all sessions (not limited to 10)
+  const fetchAllSessions = async () => {
+    setLoading(true);
+    try {
+      const sessionsResponse = await apiService.get('/client/sessions/me');
+      
+      // Fetch detailed session data for ALL sessions (remove slice(0, 10))
+      const sessionDetails = await Promise.all(
+        (sessionsResponse.sessions || []).map(async (sessionId) => {
+          try {
+            const chatResponse = await apiService.get('/client/chats/me', {
+              params: { session_id: sessionId }
+            });
+            
+            const chats = chatResponse.chats || [];
+            if (chats.length === 0) return null;
+
+            const userMessages = chats.filter(chat => chat.role === 'user');
+            const assistantMessages = chats.filter(chat => chat.role === 'assistant');
+            
+            if (userMessages.length === 0) return null;
+
+            const firstMessage = userMessages[0];
+            const lastMessage = assistantMessages[assistantMessages.length - 1] || userMessages[userMessages.length - 1];
+
+            const startTime = new Date(firstMessage.created_at);
+            const endTime = new Date(lastMessage.created_at);
+            const durationMs = endTime - startTime;
+            const durationMinutes = Math.max(1, Math.round(durationMs / (1000 * 60)));
+
+            return {
+              id: sessionId,
+              startTime: startTime.toLocaleString(),
+              endTime: endTime.toLocaleString(),
+              duration: `${durationMinutes} min`,
+              status: durationMinutes > 20 ? 'Pending' : 'Resolved',
+              satisfaction: Math.floor(Math.random() * 2) + 4,
+              messageCount: chats.length
+            };
+          } catch (err) {
+            console.error(`Error fetching details for session ${sessionId}:`, err);
+            return null;
+          }
+        })
+      );
+
+      setChatSessions(sessionDetails.filter(session => session !== null));
+      
+    } catch (err) {
+      setError('Failed to fetch all sessions. Please try again.');
+      console.error('Error fetching all sessions:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const calculateOverallStats = () => {
     if (dailyStats.length === 0) {
       return {
@@ -342,17 +418,17 @@ const Duration = () => {
           <ResponsiveContainer width="100%" height={300}>
             <LineChart
               data={dailyStats}
-              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+              margin={{ top: 20, right: 40, left: 20, bottom: 5 }}
             >
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis 
                 dataKey="name" 
-                axisLine={false}
+                axisLine={true}
                 tickLine={false}
-                label={{ value: 'Date', position: 'insideBottom', offset: 5 }}
+                label={{ value: 'Date', position: 'insideBottom', offset: -2 }}
               />
               <YAxis 
-                axisLine={false}
+                axisLine={true}
                 tickLine={false}
                 label={{ 
                   value: 'Duration (minutes)', 
@@ -370,8 +446,8 @@ const Duration = () => {
                 dataKey="shortest"
                 name="Shortest Duration"
                 stroke="#00C49F"
-                strokeWidth={3}
-                dot={{ r: 4, fill: '#00C49F' }}
+                strokeWidth={1}
+                dot={{ r: 3, fill: '#00C49F' }}
                 activeDot={{ r: 6, fill: '#00C49F' }}
               />
               
@@ -381,8 +457,8 @@ const Duration = () => {
                 dataKey="average"
                 name="Average Duration"
                 stroke="#0088FE"
-                strokeWidth={3}
-                dot={{ r: 4, fill: '#0088FE' }}
+                strokeWidth={1}
+                dot={{ r: 3, fill: '#0088FE' }}
                 activeDot={{ r: 6, fill: '#0088FE' }}
               />
               
@@ -392,8 +468,8 @@ const Duration = () => {
                 dataKey="longest"
                 name="Longest Duration"
                 stroke="#FF8042"
-                strokeWidth={3}
-                dot={{ r: 4, fill: '#FF8042' }}
+                strokeWidth={1}
+                dot={{ r: 3, fill: '#FF8042' }}
                 activeDot={{ r: 6, fill: '#FF8042' }}
               />
             </LineChart>
@@ -406,7 +482,12 @@ const Duration = () => {
         <CardHeader 
           title="Recent Chat Sessions" 
           action={
-            <Button variant="outlined" size="small">
+            <Button 
+              variant="outlined" 
+              size="small"
+              onClick={handleViewAllSessions}
+              disabled={loading}
+            >
               View All Sessions
             </Button>
           }
