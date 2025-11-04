@@ -26,7 +26,7 @@ BACKEND_ROOT = os.path.abspath(os.path.join(_THIS_DIR, "..", "..", "backend"))
 CLIENT_DATA_DIR = os.path.join(BACKEND_ROOT, "client_data")
 
 # Groq model
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # ──────────────────────────────────────────────────────────────────────────────
