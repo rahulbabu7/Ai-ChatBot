@@ -20,26 +20,112 @@ except LookupError:
 # -------------------------
 def clean_text(text: str) -> str:
     """Remove emails, long numbers, and normalize whitespace."""
-    text = re.sub(r'\S+@\S+', '', text)      # remove emails
+    # text = re.sub(r'\S+@\S+', '', text)      # remove emails
     text = re.sub(r'\d{10,}', '', text)      # remove long numbers
     text = re.sub(r'\s+', ' ', text)         # normalize spaces
     return text.strip()
 
-def chunk_text(text: str, chunk_size=500, overlap=50):
-    """Chunk text into overlapping chunks."""
+
+def semantic_chunk_text(text: str, max_chunk_size=400, min_chunk_size=100):
+    """
+    Enhanced semantic chunking that preserves paragraph boundaries
+    and creates more meaningful chunks.
+    """
+    # Split by double newlines first (paragraphs)
+    paragraphs = re.split(r'\n\n+', text)
+    chunks = []
+    current_chunk = []
+    current_size = 0
+    
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+            
+        words = para.split()
+        para_size = len(words)
+        
+        # If single paragraph exceeds max, split it by sentences
+        if para_size > max_chunk_size:
+            # Save current chunk if exists
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+                current_chunk = []
+                current_size = 0
+            
+            # Split large paragraph by sentences
+            sentences = sent_tokenize(para)
+            temp_chunk = []
+            temp_size = 0
+            
+            for sent in sentences:
+                sent_words = len(sent.split())
+                if temp_size + sent_words > max_chunk_size and temp_chunk:
+                    chunks.append(" ".join(temp_chunk))
+                    temp_chunk = [sent]
+                    temp_size = sent_words
+                else:
+                    temp_chunk.append(sent)
+                    temp_size += sent_words
+            
+            if temp_chunk:
+                chunks.append(" ".join(temp_chunk))
+                
+        elif current_size + para_size > max_chunk_size:
+            # Current chunk is full, start new one
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+            current_chunk = [para]
+            current_size = para_size
+        else:
+            # Add to current chunk
+            current_chunk.append(para)
+            current_size += para_size
+    
+    # Don't forget the last chunk
+    if current_chunk:
+        chunk_text = " ".join(current_chunk)
+        # Only add if it meets minimum size
+        if len(chunk_text.split()) >= min_chunk_size or not chunks:
+            chunks.append(chunk_text)
+        elif chunks:  # Merge small last chunk with previous
+            chunks[-1] = chunks[-1] + " " + chunk_text
+    
+    return chunks
+
+
+def chunk_text_with_overlap(text: str, chunk_size=400, overlap=50):
+    """
+    Fallback chunking with overlap for continuous text.
+    Used when semantic chunking isn't suitable.
+    """
     sentences = sent_tokenize(text)
     chunks, current, total_words = [], [], 0
+    
     for sentence in sentences:
         words = sentence.split()
         if total_words + len(words) > chunk_size:
-            chunks.append(" ".join(current))
-            current = current[-overlap:]
-            total_words = sum(len(s.split()) for s in current)
+            if current:
+                chunks.append(" ".join(current))
+                # Keep last few sentences for overlap
+                overlap_sentences = []
+                overlap_words = 0
+                for s in reversed(current):
+                    s_words = len(s.split())
+                    if overlap_words + s_words <= overlap:
+                        overlap_sentences.insert(0, s)
+                        overlap_words += s_words
+                    else:
+                        break
+                current = overlap_sentences
+                total_words = overlap_words
         current.append(sentence)
         total_words += len(words)
+    
     if current:
         chunks.append(" ".join(current))
     return chunks
+
 
 def batch_add_to_chroma(collection, chunks, client_id, max_batch_size=5000):
     """Add chunks to ChromaDB in batches to avoid size limits."""
@@ -124,14 +210,16 @@ def run_pipeline(client_id: str, source_type="crawl"):
         with open(input_path, "r", encoding="utf-8") as f:
             text = f.read()
 
-        for c in chunk_text(clean_text(text)):
+        cleaned_text = clean_text(text)
+        # Use semantic chunking for PDFs
+        for c in semantic_chunk_text(cleaned_text, max_chunk_size=400):
             chunks.append({
                 "source": "pdf",
                 "filename": pdf_filename,
                 "title": f"PDF: {pdf_filename}",
                 "content": c
             })
-        print(f"📄 Loaded PDF and created {len(chunks)} chunks")
+        print(f"📄 Loaded PDF and created {len(chunks)} semantic chunks")
 
     else:  # crawl
         input_path = os.path.join(base_dir, "website_content.json")
@@ -146,14 +234,15 @@ def run_pipeline(client_id: str, source_type="crawl"):
             if not content.strip():
                 continue
             text = clean_text(content)
-            for c in chunk_text(text):
+            # Use semantic chunking for web content
+            for c in semantic_chunk_text(text, max_chunk_size=400):
                 chunks.append({
                     "source": "crawl",
                     "url": url,
                     "title": title,
                     "content": c
                 })
-        print(f"🌐 Loaded website crawl and created {len(chunks)} chunks")
+        print(f"🌐 Loaded website crawl and created {len(chunks)} semantic chunks")
 
     # -------------------------
     # Add custom Q&A (works with both sources)
@@ -162,13 +251,18 @@ def run_pipeline(client_id: str, source_type="crawl"):
         with open(qa_path, "r", encoding="utf-8") as f:
             qa_pairs = json.load(f)
         for qa in qa_pairs:
-            q, a = qa.get("question"), qa.get("answer")
-            if q and a:
-                chunks.append({
-                    "source": "qa",
-                    "title": "Q&A",
-                    "content": f"Q: {q}\nA: {a}"
-                })
+            # Handle both "question" and "questions" format
+            questions = qa.get("questions", [qa.get("question")]) if qa.get("questions") else [qa.get("question")]
+            answer = qa.get("answer")
+            
+            if questions and answer:
+                for q in questions:
+                    if q:  # Skip empty questions
+                        chunks.append({
+                            "source": "qa",
+                            "title": "Custom Q&A",
+                            "content": f"Q: {q}\nA: {answer}"
+                        })
         print(f"➕ Added {len(qa_pairs)} custom Q&A entries")
 
     # Save chunks
@@ -179,6 +273,7 @@ def run_pipeline(client_id: str, source_type="crawl"):
     # -------------------------
     # Generate embeddings
     # -------------------------
+    print("🔄 Generating embeddings...")
     model = SentenceTransformer("all-MiniLM-L6-v2")
     embeddings = model.encode([c["content"] for c in chunks], show_progress_bar=True)
     for c, e in zip(chunks, embeddings):
@@ -217,6 +312,7 @@ def run_pipeline(client_id: str, source_type="crawl"):
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python embed_pipeline.py <client_id> [source_type]")
+        print("  source_type: 'crawl' (default) or 'pdf'")
         sys.exit(1)
     client_id = sys.argv[1]
     source_type = sys.argv[2] if len(sys.argv) > 2 else "crawl"

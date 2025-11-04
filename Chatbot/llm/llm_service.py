@@ -1,12 +1,13 @@
 import os
 import json
 import threading
+import re
 from functools import lru_cache
 from typing import List, Dict, Any, Optional
 
 from dotenv import load_dotenv
 from groq import Groq
-from sentence_transformers import SentenceTransformer, util
+from sentence_transformers import SentenceTransformer, CrossEncoder, util
 from chromadb import PersistentClient
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -20,8 +21,6 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 CHROMA_DB_DIR = os.path.abspath(os.path.join(_THIS_DIR, "..","..","chatbot", "vector-database", "chroma_db"))
 
 # Client data lives in backend/client_data/<client_id>/
-# (We resolve relative to backend/main app that imports this file.)
-# If your backend runs from backend/, this will resolve to that same backend folder.
 BACKEND_ROOT = os.path.abspath(os.path.join(_THIS_DIR, "..", "..", "backend"))
 CLIENT_DATA_DIR = os.path.join(BACKEND_ROOT, "client_data")
 
@@ -33,8 +32,10 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 # Global singletons with lazy init
 # ──────────────────────────────────────────────────────────────────────────────
 _embedder_lock = threading.Lock()
+_reranker_lock = threading.Lock()
 _groq_lock = threading.Lock()
 _sentence_model: Optional[SentenceTransformer] = None
+_reranker_model: Optional[CrossEncoder] = None
 _groq_client: Optional[Groq] = None
 _chroma_client: Optional[PersistentClient] = None
 
@@ -44,8 +45,19 @@ def _get_sentence_model() -> SentenceTransformer:
     if _sentence_model is None:
         with _embedder_lock:
             if _sentence_model is None:
-                _sentence_model = SentenceTransformer("all-MiniLM-L6-v2")
+                _sentence_model = SentenceTransformer("multi-qa-mpnet-base-dot-v1")
     return _sentence_model
+
+
+def _get_reranker() -> CrossEncoder:
+    """Initialize cross-encoder for reranking retrieved documents."""
+    global _reranker_model
+    if _reranker_model is None:
+        with _reranker_lock:
+            if _reranker_model is None:
+                print("🔄 Loading reranker model...")
+                _reranker_model = CrossEncoder('cross-encoder/ms-marco-electra-base')
+    return _reranker_model
 
 
 def _get_groq_client() -> Groq:
@@ -69,6 +81,52 @@ def _get_chroma() -> PersistentClient:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Query Processing
+# ──────────────────────────────────────────────────────────────────────────────
+def preprocess_query(query: str) -> str:
+    """Clean and normalize query."""
+    # Remove excessive special characters but keep important punctuation
+    query = re.sub(r'[^\w\s?!.,\-]', '', query)
+    # Normalize whitespace
+    query = ' '.join(query.split())
+    return query.strip()
+
+
+def expand_query(query: str) -> str:
+    """Add synonyms and related terms to improve retrieval."""
+    expansions = {
+        'admission': 'admission enrollment application apply',
+        'admissions': 'admission enrollment application apply',
+        'fees': 'fees cost tuition charges payment price',
+        'fee': 'fees cost tuition charges payment price',
+        'courses': 'courses programs degrees majors curriculum',
+        'course': 'courses programs degrees majors curriculum',
+        'faculty': 'faculty professors teachers staff instructor',
+        'contact': 'contact phone email address location reach',
+        'facilities': 'facilities infrastructure amenities resources',
+        'placement': 'placement job career recruitment companies',
+        'hostel': 'hostel accommodation residence housing',
+        'library': 'library books resources study',
+        'scholarship': 'scholarship financial aid assistance',
+    }
+    
+    query_lower = query.lower()
+    expanded_terms = set()
+    
+    for key, expansion in expansions.items():
+        if key in query_lower:
+            expanded_terms.update(expansion.split())
+    
+    # Remove terms already in query
+    query_words = set(query.lower().split())
+    new_terms = expanded_terms - query_words
+    
+    if new_terms:
+        return f"{query} {' '.join(new_terms)}"
+    return query
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Helpers: file paths and loading custom QA per client
 # ──────────────────────────────────────────────────────────────────────────────
 def _client_dir(client_id: str) -> str:
@@ -83,11 +141,6 @@ def _custom_qa_path(client_id: str) -> str:
 def _load_custom_qa_cached(client_id: str) -> List[Dict[str, Any]]:
     """
     Load and embed a client's custom QA once, memoized by client_id.
-    JSON format per item:
-    {
-      "questions": ["q1", "q2", ...],   # OR "question": "single question"
-      "answer": "answer text"
-    }
     """
     path = _custom_qa_path(client_id)
     
@@ -108,7 +161,6 @@ def _load_custom_qa_cached(client_id: str) -> List[Dict[str, Any]]:
         elif "question" in item and isinstance(item["question"], str):
             questions = [item["question"]]
         else:
-            # Skip malformed entries
             continue
         normalized.append({"questions": questions, "answer": item.get("answer", "")})
 
@@ -126,12 +178,14 @@ def reload_custom_qa_cache(client_id: str) -> None:
         _load_custom_qa_cached.cache_clear()
     except Exception:
         pass
-    # Touch load to repopulate
     _ = _load_custom_qa_cached(client_id)
 
 
-def find_custom_answer(client_id: str, query: str, threshold: float = 0.7) -> Optional[str]:
-    """Find matching answer from custom Q&A with lowered threshold for better matching."""
+def find_custom_answer(client_id: str, query: str, threshold: float = 0.72) -> Optional[Dict[str, Any]]:
+    """
+    Enhanced custom Q&A matching with multiple strategies.
+    Returns dict with answer and confidence if found, else None.
+    """
     qa_entries = _load_custom_qa_cached(client_id)
     
     if not qa_entries:
@@ -139,73 +193,117 @@ def find_custom_answer(client_id: str, query: str, threshold: float = 0.7) -> Op
         
     model = _get_sentence_model()
     q_emb = model.encode(query)
-    best_score = -1.0
-    best_answer = None
+    
+    best_match = {'score': -1.0, 'answer': None, 'question': None}
     
     for qa in qa_entries:
-        for emb in qa["embeddings"]:
-            score = util.cos_sim(q_emb, emb).item()
-            if score > best_score:
-                best_score = score
-                best_answer = qa["answer"]
+        for q_text, emb in zip(qa["questions"], qa["embeddings"]):
+            # Semantic similarity
+            semantic_score = util.cos_sim(q_emb, emb).item()
+            
+            # Keyword overlap boost
+            query_words = set(query.lower().split())
+            qa_words = set(q_text.lower().split())
+            overlap = len(query_words & qa_words) / len(query_words | qa_words) if (query_words | qa_words) else 0
+            
+            # Combined score (80% semantic, 20% keyword)
+            combined_score = 0.8 * semantic_score + 0.2 * overlap
+            
+            if combined_score > best_match['score']:
+                best_match = {
+                    'score': combined_score,
+                    'answer': qa["answer"],
+                    'question': q_text
+                }
     
-    if best_score >= threshold:
-        return best_answer
+    # Dynamic threshold based on query length (shorter queries need higher confidence)
+    dynamic_threshold = threshold if len(query.split()) > 4 else threshold + 0.05
+    
+    if best_match['score'] >= dynamic_threshold:
+        confidence = "high" if best_match['score'] >= 0.85 else "medium"
+        return {
+            'answer': best_match['answer'],
+            'confidence': confidence,
+            'matched_question': best_match['question'],
+            'score': best_match['score']
+        }
     return None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Retrieval from Chroma (per-client collection)
+# Retrieval from Chroma with Reranking
 # ──────────────────────────────────────────────────────────────────────────────
 def _get_collection(client_id: str):
-    # We store each client's docs in a collection named exactly the client_id
     chroma = _get_chroma()
     try:
         return chroma.get_collection(client_id)
     except Exception:
-        # Collection may not exist yet
         return None
 
 
-def retrieve_context(client_id: str, query: str, top_k: int = 6, max_chars: int = 1800) -> Dict[str, Any]:
+def retrieve_context(client_id: str, query: str, top_k: int = 12, max_chars: int = 2000) -> Dict[str, Any]:
     """
-    Returns a dict with:
+    Enhanced retrieval with reranking and query expansion.
+    Returns:
       {
         "text": "<concatenated context>",
-        "sources": [{"source": "pdf|crawl|qa", "url": "...", "title": "...", "filename": "..."}, ...]
+        "sources": [...],
+        "confidence": "high|medium|low"
       }
-    If no collection or results, returns {"text": "", "sources": []}.
     """
+    # Preprocess and expand query
+    processed_query = preprocess_query(query)
+    expanded_query = expand_query(processed_query)
+    
     coll = _get_collection(client_id)
     if coll is None:
-        return {"text": "", "sources": []}
+        return {"text": "", "sources": [], "confidence": "none"}
 
     try:
-        res = coll.query(query_texts=[query], n_results=top_k)
+        # Retrieve more candidates for reranking
+        res = coll.query(query_texts=[expanded_query], n_results=top_k)
         docs = res.get("documents", [[]])[0] if res.get("documents") else []
         metas = res.get("metadatas", [[]])[0] if res.get("metadatas") else []
-    except Exception:
-        return {"text": "", "sources": []}
+    except Exception as e:
+        print(f"⚠️ Retrieval error: {e}")
+        return {"text": "", "sources": [], "confidence": "none"}
 
     if not docs:
-        return {"text": "", "sources": []}
+        return {"text": "", "sources": [], "confidence": "none"}
 
+    # Rerank using cross-encoder (use original query for relevance)
+    reranker = _get_reranker()
+    pairs = [[processed_query, doc] for doc in docs]
+    scores = reranker.predict(pairs)
+    
+    # Sort by reranking scores
+    ranked = sorted(zip(docs, metas, scores), key=lambda x: x[2], reverse=True)
+    
+    # Build context from top reranked results
     buf = []
     total = 0
     used_metas = []
-    for d, m in zip(docs, metas):
-        if not d:
+    relevance_scores = []
+    
+    # Use top 6 after reranking
+    for doc, meta, score in ranked[:6]:
+        if not doc or not doc.strip():
             continue
-        if total + len(d) > max_chars:
+        if total + len(doc) > max_chars:
             remaining = max_chars - total
-            if remaining > 80:
-                buf.append(d[:remaining])
-                used_metas.append(m)
+            if remaining > 100:
+                buf.append(doc[:remaining] + "...")
+                used_metas.append(meta)
+                relevance_scores.append(score)
                 total += remaining
             break
-        buf.append(d)
-        used_metas.append(m)
-        total += len(d)
+        buf.append(doc)
+        used_metas.append(meta)
+        relevance_scores.append(score)
+        total += len(doc)
+
+    if not buf:
+        return {"text": "", "sources": [], "confidence": "none"}
 
     text = "\n\n---\n\n".join(buf)
     sources = []
@@ -231,32 +329,59 @@ def retrieve_context(client_id: str, query: str, top_k: int = 6, max_chars: int 
         
         sources.append(source_info)
 
-    return {"text": text.strip(), "sources": sources}
+    # Estimate confidence based on relevance scores and context length
+    avg_score = sum(relevance_scores) / len(relevance_scores) if relevance_scores else 0
+    confidence = "low"
+    if avg_score > 5.0 and len(sources) >= 3:
+        confidence = "high"
+    elif avg_score > 2.0 or len(sources) >= 2:
+        confidence = "medium"
+
+    return {
+        "text": text.strip(),
+        "sources": sources,
+        "confidence": confidence
+    }
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Prompting & Generation (Groq)
 # ──────────────────────────────────────────────────────────────────────────────
 def _build_prompt(client_id: str, context_text: str, user_input: str) -> str:
-    system_rules = (
-        "You are a helpful assistant for the college website. "
-        "Answer only using the provided CONTEXT. "
-        "If the answer is not in the context, say you don't have that information."
+    """Enhanced prompt template with better instructions."""
+    system_prompt = """You are a helpful and knowledgeable college information assistant. Follow these rules:
+
+1. ONLY use information from the CONTEXT below to answer questions
+2. If the answer isn't in the context, say "I don't have that specific information in my knowledge base"
+3. Be specific and include relevant details (numbers, dates, requirements, etc.)
+4. Keep answers concise but complete (2-4 sentences typically)
+5. If the context has partial information, provide what you can and note what's missing
+6. For contact/admission questions, include specific details like phone numbers, emails, dates if available
+7. Use a friendly, professional tone appropriate for students and parents
+8. Do not make up or assume information not in the context
+
+CONTEXT:
+{context}
+
+QUESTION: {question}
+
+ANSWER:"""
+    
+    return system_prompt.format(
+        context=context_text or "[No relevant information found in the knowledge base]",
+        question=user_input
     )
-    header = f"CLIENT: {client_id}\n\nCONTEXT:\n{context_text or '[no context]'}\n\nUSER QUESTION: {user_input}\n\nASSISTANT:"
-    return f"{system_rules}\n\n{header}"
 
 
 def _generate_llm_response(prompt: str) -> str:
     client = _get_groq_client()
     try:
-        # Non-streaming for simplicity in the backend function
         completion = client.chat.completions.create(
             model=GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.4,
+            temperature=0.3,  # Lower temperature for more focused responses
             top_p=0.9,
-            max_tokens=350,
+            max_tokens=400,
             stream=False,
         )
         return (completion.choices[0].message.content or "").strip()
@@ -267,34 +392,61 @@ def _generate_llm_response(prompt: str) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 # Public API (call from FastAPI)
 # ──────────────────────────────────────────────────────────────────────────────
-def chat_with_model(client_id: str, query: str) -> str:
+def chat_with_model(client_id: str, query: str) -> Dict[str, Any]:
     """
-    Main chat entry point:
-      1) Try client-specific custom QA (priority - direct answers)
-      2) Else retrieve from client's collection (RAG from website/PDF/embedded Q&A)
-      3) Else fallback
+    Enhanced chat entry point with confidence scoring.
+    Returns:
+      {
+        "answer": str,
+        "confidence": "high|medium|low|none",
+        "sources": [...],
+        "type": "custom_qa|rag|fallback"
+      }
     """
     q = (query or "").strip()
     if not q:
-        return "Please enter a question."
+        return {
+            "answer": "Please enter a question.",
+            "confidence": "none",
+            "sources": [],
+            "type": "error"
+        }
 
-    # 1) Custom QA - Direct answers with semantic matching
-    ans = find_custom_answer(client_id, q)
-    if ans:
-        return ans
+    # 1) Custom QA - Direct answers with semantic matching (PRIORITY)
+    custom_result = find_custom_answer(client_id, q)
+    if custom_result:
+        return {
+            "answer": custom_result['answer'],
+            "confidence": custom_result['confidence'],
+            "sources": [{"type": "custom_qa", "title": "Pre-configured Answer"}],
+            "type": "custom_qa",
+            "debug_score": custom_result.get('score', 0)
+        }
 
     # 2) Retrieval Augmented Generation - Vector database search
-    ctx = retrieve_context(client_id, q, top_k=6, max_chars=1800)
+    ctx = retrieve_context(client_id, q, top_k=12, max_chars=2000)
     if ctx["text"]:
         prompt = _build_prompt(client_id, ctx["text"], q)
-        return _generate_llm_response(prompt)
+        answer = _generate_llm_response(prompt)
+        
+        return {
+            "answer": answer,
+            "confidence": ctx["confidence"],
+            "sources": ctx["sources"],
+            "type": "rag"
+        }
 
     # 3) Fallback
-    return "I couldn't find that information in this client's knowledge base."
+    return {
+        "answer": "I couldn't find that information in this client's knowledge base. Please try rephrasing your question or contact the college directly for more details.",
+        "confidence": "none",
+        "sources": [],
+        "type": "fallback"
+    }
 
 
 def explain_context(client_id: str, query: str) -> Dict[str, Any]:
     """
-    For a `/context` endpoint or debugging in UI: returns the retrieved text+sources.
+    For debugging: returns the retrieved text+sources+confidence.
     """
     return retrieve_context(client_id, query)
