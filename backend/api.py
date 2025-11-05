@@ -164,7 +164,6 @@ from typing import Optional
 
 @app.post("/client/chat/{client_id}")
 def client_chat(client_id: str, req: ChatRequest, request: Request, x_chatbot_key: str = Header(None)):
-
     # Connect to the database
     conn = get_db()
     cursor = conn.cursor()
@@ -191,29 +190,36 @@ def client_chat(client_id: str, req: ChatRequest, request: Request, x_chatbot_ke
     except requests.RequestException:
         country_code = "Unknown"
 
-    # ✅ Store user message and country code in the database
+    # ✅ Store user message with admin_override and is_active columns
     cursor.execute("""
-        INSERT INTO chats (client_id, session_id, role, message, user_agent, country_code)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO chats (client_id, session_id, role, message, user_agent, country_code, admin_override, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, 0, 1)
     """, (client_id, session_id, "user", req.message, user_agent, country_code))
     conn.commit()
 
     # ✅ Generate chatbot reply
-    bot_reply = chat_with_model(client_id, req.message)
+    bot_response = chat_with_model(client_id, req.message)
 
-    # ✅ Store assistant reply with the same country code
+    # Extract just the answer text from the response dictionary
+    bot_reply = bot_response.get("answer", "I'm sorry, I couldn't generate a response.") if isinstance(bot_response, dict) else str(bot_response)
+
+    # ✅ Store assistant reply with admin_override and is_active columns
     cursor.execute("""
-        INSERT INTO chats (client_id, session_id, role, message, user_agent, country_code)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO chats (client_id, session_id, role, message, user_agent, country_code, admin_override, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, 0, 1)
     """, (client_id, session_id, "assistant", bot_reply, user_agent, country_code))
     conn.commit()
 
     # Close the connection
     conn.close()
 
-    # Return the response with session_id and bot reply
-    return {"session_id": session_id, "reply": bot_reply}
-
+    # Return the response with session_id and bot reply (with full metadata)
+    return {
+        "session_id": session_id,
+        "reply": bot_reply,
+        "confidence": bot_response.get("confidence") if isinstance(bot_response, dict) else None,
+        "type": bot_response.get("type") if isinstance(bot_response, dict) else None
+    }
 
 # ----------------------------
 # 🔹 CHAT CONTEXT
@@ -1034,9 +1040,9 @@ async def get_active_users(client_id: str = Depends(get_client_from_header)):
 #             WHERE client_id=? AND session_id=? AND role='assistant' AND is_active=1
 #             ORDER BY created_at DESC LIMIT 1
 #         """, (client_id, session_id))
-        
+
 #         last_assistant = cursor.fetchone()
-        
+
 #         # Mark it as inactive if it exists
 #         updated_rows = 0
 #         if last_assistant:
@@ -1046,7 +1052,7 @@ async def get_active_users(client_id: str = Depends(get_client_from_header)):
 #                 WHERE id = ?
 #             """, (last_assistant['id'],))
 #             updated_rows = cursor.rowcount
-        
+
 #         print(f"✅ Marked {updated_rows} previous assistant messages as inactive")
 
 #         # Insert admin's override message
@@ -1057,9 +1063,9 @@ async def get_active_users(client_id: str = Depends(get_client_from_header)):
 
 #         conn.commit()
 #         print(f"✅ Admin reply inserted successfully for session {session_id}")
-        
+
 #         return {
-#             "success": True, 
+#             "success": True,
 #             "message": "Admin reply sent successfully",
 #             "previous_messages_deactivated": updated_rows
 #         }
@@ -1070,7 +1076,7 @@ async def get_active_users(client_id: str = Depends(get_client_from_header)):
 #         import traceback
 #         traceback.print_exc()
 #         raise HTTPException(
-#             status_code=500, 
+#             status_code=500,
 #             detail=f"Failed to send admin reply: {str(e)}"
 #         )
 #     finally:
@@ -1090,20 +1096,20 @@ async def admin_reply(
         # DON'T mark previous messages as inactive - just insert the admin reply
         # The admin_override flag will distinguish it from bot messages
         # If you want to replace the last bot message, uncomment below:
-        
+
         # cursor.execute("""
         #     SELECT id FROM chats
-        #     WHERE client_id=? AND session_id=? AND role='assistant' 
+        #     WHERE client_id=? AND session_id=? AND role='assistant'
         #     AND admin_override=0 AND is_active=1
         #     ORDER BY created_at DESC LIMIT 1
         # """, (client_id, session_id))
-        # 
+        #
         # last_bot_message = cursor.fetchone()
         # if last_bot_message:
         #     cursor.execute("""
         #         UPDATE chats SET is_active = 0 WHERE id = ?
         #     """, (last_bot_message['id'],))
-        
+
         print(f"✅ Inserting admin override message")
 
         # Insert admin's override message
@@ -1114,9 +1120,9 @@ async def admin_reply(
 
         conn.commit()
         print(f"✅ Admin reply inserted successfully for session {session_id}")
-        
+
         return {
-            "success": True, 
+            "success": True,
             "message": "Admin reply sent successfully"
         }
 
@@ -1126,7 +1132,7 @@ async def admin_reply(
         import traceback
         traceback.print_exc()
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail=f"Failed to send admin reply: {str(e)}"
         )
     finally:
@@ -1245,14 +1251,14 @@ def get_public_chat_history(
     """Public endpoint for chatbot widget to get chat history"""
     conn = get_db()
     cursor = conn.cursor()
-    
+
     # Validate client + chatbot_key
     cursor.execute("SELECT * FROM users WHERE client_id=? AND chatbot_key=?", (client_id, x_chatbot_key))
     client = cursor.fetchone()
-    
+
     if not client:
         raise HTTPException(status_code=403, detail="Invalid client or key")
-    
+
     # Get all active chats for this session
     cursor.execute("""
         SELECT id, role, message, created_at, admin_override, country_code, user_agent
@@ -1260,8 +1266,8 @@ def get_public_chat_history(
         WHERE client_id=? AND session_id=? AND is_active=1
         ORDER BY created_at ASC
     """, (client_id, session_id))
-    
+
     chats = [dict(row) for row in cursor.fetchall()]
     conn.close()
-    
+
     return {"chats": chats}
