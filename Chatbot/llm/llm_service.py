@@ -109,18 +109,18 @@ def expand_query(query: str) -> str:
         'library': 'library books resources study',
         'scholarship': 'scholarship financial aid assistance',
     }
-    
+
     query_lower = query.lower()
     expanded_terms = set()
-    
+
     for key, expansion in expansions.items():
         if key in query_lower:
             expanded_terms.update(expansion.split())
-    
+
     # Remove terms already in query
     query_words = set(query.lower().split())
     new_terms = expanded_terms - query_words
-    
+
     if new_terms:
         return f"{query} {' '.join(new_terms)}"
     return query
@@ -143,7 +143,7 @@ def _load_custom_qa_cached(client_id: str) -> List[Dict[str, Any]]:
     Load and embed a client's custom QA once, memoized by client_id.
     """
     path = _custom_qa_path(client_id)
-    
+
     if not os.path.exists(path):
         return []
 
@@ -187,38 +187,38 @@ def find_custom_answer(client_id: str, query: str, threshold: float = 0.72) -> O
     Returns dict with answer and confidence if found, else None.
     """
     qa_entries = _load_custom_qa_cached(client_id)
-    
+
     if not qa_entries:
         return None
-        
+
     model = _get_sentence_model()
     q_emb = model.encode(query)
-    
+
     best_match = {'score': -1.0, 'answer': None, 'question': None}
-    
+
     for qa in qa_entries:
         for q_text, emb in zip(qa["questions"], qa["embeddings"]):
             # Semantic similarity
             semantic_score = util.cos_sim(q_emb, emb).item()
-            
+
             # Keyword overlap boost
             query_words = set(query.lower().split())
             qa_words = set(q_text.lower().split())
             overlap = len(query_words & qa_words) / len(query_words | qa_words) if (query_words | qa_words) else 0
-            
+
             # Combined score (80% semantic, 20% keyword)
             combined_score = 0.8 * semantic_score + 0.2 * overlap
-            
+
             if combined_score > best_match['score']:
                 best_match = {
                     'score': combined_score,
                     'answer': qa["answer"],
                     'question': q_text
                 }
-    
+
     # Dynamic threshold based on query length (shorter queries need higher confidence)
     dynamic_threshold = threshold if len(query.split()) > 4 else threshold + 0.05
-    
+
     if best_match['score'] >= dynamic_threshold:
         confidence = "high" if best_match['score'] >= 0.85 else "medium"
         return {
@@ -254,14 +254,19 @@ def retrieve_context(client_id: str, query: str, top_k: int = 12, max_chars: int
     # Preprocess and expand query
     processed_query = preprocess_query(query)
     expanded_query = expand_query(processed_query)
-    
+
     coll = _get_collection(client_id)
     if coll is None:
         return {"text": "", "sources": [], "confidence": "none"}
 
     try:
         # Retrieve more candidates for reranking
-        res = coll.query(query_texts=[expanded_query], n_results=top_k)
+        model = _get_sentence_model()
+        query_embedding = model.encode(expanded_query)
+        res = coll.query(
+            query_embeddings=[query_embedding.tolist()],
+            n_results=top_k
+        )
         docs = res.get("documents", [[]])[0] if res.get("documents") else []
         metas = res.get("metadatas", [[]])[0] if res.get("metadatas") else []
     except Exception as e:
@@ -275,16 +280,16 @@ def retrieve_context(client_id: str, query: str, top_k: int = 12, max_chars: int
     reranker = _get_reranker()
     pairs = [[processed_query, doc] for doc in docs]
     scores = reranker.predict(pairs)
-    
+
     # Sort by reranking scores
     ranked = sorted(zip(docs, metas, scores), key=lambda x: x[2], reverse=True)
-    
+
     # Build context from top reranked results
     buf = []
     total = 0
     used_metas = []
     relevance_scores = []
-    
+
     # Use top 6 after reranking
     for doc, meta, score in ranked[:6]:
         if not doc or not doc.strip():
@@ -307,10 +312,10 @@ def retrieve_context(client_id: str, query: str, top_k: int = 12, max_chars: int
 
     text = "\n\n---\n\n".join(buf)
     sources = []
-    
+
     for m in used_metas:
         source_info = {"source": m.get("source", "unknown")}
-        
+
         if m.get("source") == "crawl":
             source_info.update({
                 "url": m.get("url", ""),
@@ -326,7 +331,7 @@ def retrieve_context(client_id: str, query: str, top_k: int = 12, max_chars: int
                 "title": "Custom Q&A",
                 "type": "qa"
             })
-        
+
         sources.append(source_info)
 
     # Estimate confidence based on relevance scores and context length
@@ -366,7 +371,7 @@ CONTEXT:
 QUESTION: {question}
 
 ANSWER:"""
-    
+
     return system_prompt.format(
         context=context_text or "[No relevant information found in the knowledge base]",
         question=user_input
@@ -428,7 +433,7 @@ def chat_with_model(client_id: str, query: str) -> Dict[str, Any]:
     if ctx["text"]:
         prompt = _build_prompt(client_id, ctx["text"], q)
         answer = _generate_llm_response(prompt)
-        
+
         return {
             "answer": answer,
             "confidence": ctx["confidence"],

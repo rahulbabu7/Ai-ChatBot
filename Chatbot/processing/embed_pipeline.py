@@ -36,15 +36,15 @@ def semantic_chunk_text(text: str, max_chunk_size=400, min_chunk_size=100):
     chunks = []
     current_chunk = []
     current_size = 0
-    
+
     for para in paragraphs:
         para = para.strip()
         if not para:
             continue
-            
+
         words = para.split()
         para_size = len(words)
-        
+
         # If single paragraph exceeds max, split it by sentences
         if para_size > max_chunk_size:
             # Save current chunk if exists
@@ -52,12 +52,12 @@ def semantic_chunk_text(text: str, max_chunk_size=400, min_chunk_size=100):
                 chunks.append(" ".join(current_chunk))
                 current_chunk = []
                 current_size = 0
-            
+
             # Split large paragraph by sentences
             sentences = sent_tokenize(para)
             temp_chunk = []
             temp_size = 0
-            
+
             for sent in sentences:
                 sent_words = len(sent.split())
                 if temp_size + sent_words > max_chunk_size and temp_chunk:
@@ -67,10 +67,10 @@ def semantic_chunk_text(text: str, max_chunk_size=400, min_chunk_size=100):
                 else:
                     temp_chunk.append(sent)
                     temp_size += sent_words
-            
+
             if temp_chunk:
                 chunks.append(" ".join(temp_chunk))
-                
+
         elif current_size + para_size > max_chunk_size:
             # Current chunk is full, start new one
             if current_chunk:
@@ -81,7 +81,7 @@ def semantic_chunk_text(text: str, max_chunk_size=400, min_chunk_size=100):
             # Add to current chunk
             current_chunk.append(para)
             current_size += para_size
-    
+
     # Don't forget the last chunk
     if current_chunk:
         chunk_text = " ".join(current_chunk)
@@ -90,7 +90,7 @@ def semantic_chunk_text(text: str, max_chunk_size=400, min_chunk_size=100):
             chunks.append(chunk_text)
         elif chunks:  # Merge small last chunk with previous
             chunks[-1] = chunks[-1] + " " + chunk_text
-    
+
     return chunks
 
 
@@ -101,7 +101,7 @@ def chunk_text_with_overlap(text: str, chunk_size=400, overlap=50):
     """
     sentences = sent_tokenize(text)
     chunks, current, total_words = [], [], 0
-    
+
     for sentence in sentences:
         words = sentence.split()
         if total_words + len(words) > chunk_size:
@@ -121,7 +121,7 @@ def chunk_text_with_overlap(text: str, chunk_size=400, overlap=50):
                 total_words = overlap_words
         current.append(sentence)
         total_words += len(words)
-    
+
     if current:
         chunks.append(" ".join(current))
     return chunks
@@ -254,7 +254,7 @@ def run_pipeline(client_id: str, source_type="crawl"):
             # Handle both "question" and "questions" format
             questions = qa.get("questions", [qa.get("question")]) if qa.get("questions") else [qa.get("question")]
             answer = qa.get("answer")
-            
+
             if questions and answer:
                 for q in questions:
                     if q:  # Skip empty questions
@@ -274,7 +274,7 @@ def run_pipeline(client_id: str, source_type="crawl"):
     # Generate embeddings
     # -------------------------
     print("🔄 Generating embeddings...")
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    model = SentenceTransformer("multi-qa-mpnet-base-dot-v1")
     embeddings = model.encode([c["content"] for c in chunks], show_progress_bar=True)
     for c, e in zip(chunks, embeddings):
         c["embedding"] = e.tolist()
@@ -287,21 +287,26 @@ def run_pipeline(client_id: str, source_type="crawl"):
     # Store in ChromaDB
     # -------------------------
     try:
-        client = chromadb.PersistentClient(path=chroma_dir)
+            client = chromadb.PersistentClient(path=chroma_dir)
 
-        # Delete existing collection if exists
-        try:
-            client.delete_collection(name=client_id.lower())
-            print(f"🗑️  Deleted existing collection '{client_id.lower()}'")
-        except:
-            pass
+            # Delete existing collection if exists
+            try:
+                client.delete_collection(name=client_id.lower())
+                print(f"🗑️  Deleted existing collection '{client_id.lower()}'")
+            except:
+                pass
 
-        coll = client.get_or_create_collection(name=client_id.lower())
+            # CRITICAL: Create collection WITHOUT embedding function
+            # This prevents ChromaDB from using its own cached embeddings
+            coll = client.get_or_create_collection(
+                name=client_id.lower(),
+                metadata={"hnsw:space": "cosine"}  # Use cosine similarity
+            )
 
-        batch_add_to_chroma(coll, chunks, client_id)
+            batch_add_to_chroma(coll, chunks, client_id)
 
-        print(f"🎉 Successfully ingested {len(chunks)} chunks into Chroma collection '{client_id.lower()}'")
-        print(f"🔍 Collection now contains {coll.count()} documents")
+            print(f"🎉 Successfully ingested {len(chunks)} chunks into Chroma collection '{client_id.lower()}'")
+            print(f"🔍 Collection now contains {coll.count()} documents")
 
     except Exception as e:
         raise RuntimeError(f"❌ Failed to store in ChromaDB: {e}")
