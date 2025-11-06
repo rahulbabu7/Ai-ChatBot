@@ -1,10 +1,10 @@
 import os
 from celery import Celery
-
+from .config import settings
 celery_app = Celery(
     "fastapi_tasks",
-    broker=os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"),
-    backend=os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0"),
+    broker=os.environ.get("CELERY_BROKER_URL", f"{settings.REDIS_URL}/0"),
+    backend=os.environ.get("CELERY_RESULT_BACKEND", f"{settings.REDIS_URL}/0"),
 )
 
 celery_app.conf.update(

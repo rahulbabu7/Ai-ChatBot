@@ -3,13 +3,11 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
+from .config import settings
 
 # JWT settings
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = os.getenv("ALGORITHM")
+SECRET_KEY = settings.SECRET_KEY
+ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 
