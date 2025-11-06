@@ -5,7 +5,7 @@ from typing import Optional, List
 import uuid
 
 from sqlmodel import SQLModel, Field, select
-from sqlalchemy import Column, String, Index
+from sqlalchemy import Column, String, Integer, Text, DateTime, Index
 from sqlalchemy.sql import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,14 +22,14 @@ class User(SQLModel, table=True):
     __tablename__ = "users"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    username: str = Field(sa_column=Column(String, unique=True, nullable=False, index=True))
-    password: str = Field(nullable=False)
-    name: Optional[str] = None
-    email: Optional[str] = None
-    mobile: Optional[str] = None
-    role: str = Field(default="client", nullable=False)
-    client_id: str = Field(sa_column=Column(String, unique=True, nullable=False, index=True))
-    chatbot_key: Optional[str] = None
+    username: str = Field(sa_column=Column(String(100), unique=True, nullable=False, index=True))
+    password: str = Field(sa_column=Column(String(255), nullable=False))
+    name: Optional[str] = Field(default=None, sa_column=Column(String(100)))
+    email: Optional[str] = Field(default=None, sa_column=Column(String(100)))
+    mobile: Optional[str] = Field(default=None, sa_column=Column(String(20)))
+    role: str = Field(default="client", sa_column=Column(String(20), nullable=False))
+    client_id: str = Field(sa_column=Column(String(100), unique=True, nullable=False, index=True))
+    chatbot_key: Optional[str] = Field(default=None, sa_column=Column(String(100)))
 
 
 class Chat(SQLModel, table=True):
@@ -40,18 +40,18 @@ class Chat(SQLModel, table=True):
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    client_id: str = Field(nullable=False, index=True)
-    session_id: str = Field(nullable=False, index=True)
-    role: str = Field(nullable=False)
-    message: str = Field(nullable=False)
-    user_agent: Optional[str] = None
+    client_id: str = Field(sa_column=Column(String(100), nullable=False, index=True))
+    session_id: str = Field(sa_column=Column(String(100), nullable=False, index=True))
+    role: str = Field(sa_column=Column(String(20), nullable=False))
+    message: str = Field(sa_column=Column(Text, nullable=False))
+    user_agent: Optional[str] = Field(default=None, sa_column=Column(String(255)))
     created_at: datetime = Field(
         default_factory=utc_now,
-        sa_column=Column(String, server_default=func.datetime('now')),
+        sa_column=Column(DateTime, nullable=False, server_default=func.now()),
     )
-    country_code: str = Field(default="unknown", nullable=False)
-    admin_override: int = Field(default=0, nullable=False)
-    is_active: int = Field(default=1, nullable=False)
+    country_code: str = Field(default="unknown", sa_column=Column(String(10), nullable=False))
+    admin_override: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default="0"))
+    is_active: int = Field(default=1, sa_column=Column(Integer, nullable=False, server_default="1"))
 
 
 class DomainMapping(SQLModel, table=True):
@@ -61,12 +61,12 @@ class DomainMapping(SQLModel, table=True):
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    domain: str = Field(sa_column=Column(String, unique=True, nullable=False, index=True))
-    client_id: str = Field(foreign_key="users.client_id", nullable=False)
-    chatbot_key: str = Field(nullable=False)
+    domain: str = Field(sa_column=Column(String(255), unique=True, nullable=False, index=True))
+    client_id: str = Field(sa_column=Column(String(100), nullable=False))
+    chatbot_key: str = Field(sa_column=Column(String(100), nullable=False))
     created_at: datetime = Field(
         default_factory=utc_now,
-        sa_column=Column(String, server_default=func.datetime('now')),
+        sa_column=Column(DateTime, nullable=False, server_default=func.now()),
     )
 
 
@@ -76,21 +76,22 @@ class Task(SQLModel, table=True):
         Index("idx_tasks_client", "client_id"),
     )
 
-    id: str = Field(sa_column=Column(String, primary_key=True))
-    client_id: str = Field(nullable=False, index=True)
-    name: Optional[str] = None
-    status: Optional[str] = None
-    info: Optional[str] = None
+    id: str = Field(sa_column=Column(String(100), primary_key=True))
+    client_id: str = Field(sa_column=Column(String(100), nullable=False, index=True))
+    name: Optional[str] = Field(default=None, sa_column=Column(String(100)))
+    status: Optional[str] = Field(default=None, sa_column=Column(String(20)))
+    info: Optional[str] = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(
         default_factory=utc_now,
-        sa_column=Column(String, server_default=func.datetime('now')),
+        sa_column=Column(DateTime, nullable=False, server_default=func.now()),
     )
     updated_at: datetime = Field(
         default_factory=utc_now,
         sa_column=Column(
-            String,
-            server_default=func.datetime('now'),
-            onupdate=func.datetime('now'),
+            DateTime,
+            nullable=False,
+            server_default=func.now(),
+            onupdate=func.now(),
         ),
     )
 
@@ -122,7 +123,7 @@ async def register_domain(session: AsyncSession, domain: str, client_id: str) ->
         statement = select(User).where(User.client_id == client_id)
         result = await session.execute(statement)
         user = result.scalar_one_or_none()
-        
+
         if not user:
             print(f"❌ User not found for client_id: {client_id}")
             return False
@@ -173,10 +174,10 @@ async def remove_domain(session: AsyncSession, domain: str, client_id: str) -> b
         )
         result = await session.execute(statement)
         dm = result.scalar_one_or_none()
-        
+
         if not dm:
             return False
-        
+
         await session.delete(dm)
         await session.commit()
         return True
@@ -249,9 +250,9 @@ async def add_task(
 
 
 async def update_task(
-    session: AsyncSession, 
-    task_id: str, 
-    status: str, 
+    session: AsyncSession,
+    task_id: str,
+    status: str,
     info: Optional[str] = None
 ) -> bool:
     """Update task status and info"""
@@ -259,7 +260,7 @@ async def update_task(
         task = await session.get(Task, task_id)
         if not task:
             return False
-        
+
         task.status = status
         task.info = info
         task.updated_at = utc_now()
@@ -282,7 +283,7 @@ async def get_tasks_for_client(session: AsyncSession, client_id: str) -> List[di
         )
         result = await session.execute(statement)
         rows = result.scalars().all()
-        
+
         return [
             {
                 "id": r.id,
