@@ -27,12 +27,22 @@ os.makedirs(CLIENTS_DIR, exist_ok=True)
 # -----------------------------------------------------------------------------
 def run_async(coro):
     """Helper to run async functions in Celery tasks"""
-    loop = asyncio.get_event_loop()
-    if loop.is_running():
-        # If event loop is already running, create a new one
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If event loop is already running, create a new one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        # No event loop exists, create a new one
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-    return loop.run_until_complete(coro)
+
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        # Don't close the loop in case it's needed for other tasks
+        pass
 
 
 async def db_add_task(task_id: str, client_id: str, name: str, status: str = "queued", info: str = None):
@@ -70,7 +80,7 @@ def run_subprocess_sync(cmd: list, cwd: str = None):
 def crawl_website_task(self, client_id: str, allowed_domain: str, start_url: str):
     """Crawl a website and save JSON content."""
     task_id = self.request.id
-    
+
     # Add task to database
     run_async(db_add_task(task_id, client_id, "Crawl Website", status="queued"))
 
@@ -111,7 +121,7 @@ def run_embeddings_task(self, prev_result):
 
     # Add task to database
     run_async(db_add_task(task_id, client_id, "Run Embeddings", status="queued"))
-    
+
     logger.info(f"Starting embeddings for client {client_id} (source: {source_type})")
     self.update_state(state="PROGRESS", meta={"progress": 10, "message": "Starting embeddings..."})
     run_async(db_update_task(task_id, "running", "Generating embeddings..."))
@@ -134,7 +144,7 @@ def run_embeddings_task(self, prev_result):
 def crawl_and_embed_pipeline(self, client_id: str, allowed_domain: str, start_url: str):
     """High-level pipeline for crawling website + embeddings."""
     logger.info(f"Starting combined crawl+embed for client {client_id}")
-    
+
     # Create a chain of tasks
     pipeline = chain(
         crawl_website_task.s(client_id, allowed_domain, start_url),
@@ -148,7 +158,7 @@ def crawl_and_embed_pipeline(self, client_id: str, allowed_domain: str, start_ur
 def pdf_embed_pipeline(self, client_id: str):
     """Pipeline to embed uploaded PDF directly."""
     logger.info(f"Starting PDF embedding for client {client_id}")
-    
+
     # For PDFs, no crawling step; just run embeddings with source_type='pdf'
     result = run_embeddings_task.apply_async(
         args=({"client_id": client_id, "source_type": "pdf"},)

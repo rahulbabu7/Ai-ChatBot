@@ -1,38 +1,46 @@
 import os
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
     # API Keys
     GROQ_API_KEY: str
     GROQ_MODEL: str
+
     # Redis
     REDIS_URL: str
+
     # Security
     SECRET_KEY: str
     ALGORITHM: str
-    # Database (SQLite)
-    DB_NAME: str = "app.db"
-    DB_PATH: str = "./backend"
-    
+
+    # MariaDB/MySQL Configuration
+    MARIADB_ROOT_PASSWORD: str
+    MARIADB_DATABASE: str
+    MARIADB_USER: str
+    MARIADB_PASSWORD: str
+    MARIADB_HOST: str = "localhost"  # Default to localhost, override in .env for Docker
+    MARIADB_PORT: int = 3306
+
     @property
     def DATABASE_URL(self) -> str:
-        """SQLite connection string for sync operations (Alembic)"""
-        db_file = os.path.join(self.DB_PATH, self.DB_NAME)
-        return f"sqlite:///{db_file}"
-    
+        """MariaDB connection string for sync operations (Alembic)"""
+        return (
+            f"mysql+pymysql://{self.MARIADB_USER}:{self.MARIADB_PASSWORD}"
+            f"@{self.MARIADB_HOST}:{self.MARIADB_PORT}/{self.MARIADB_DATABASE}"
+        )
+
     @property
     def ASYNC_DATABASE_URL(self) -> str:
-        """Async SQLite connection string for FastAPI"""
-        db_file = os.path.join(self.DB_PATH, self.DB_NAME)
-        return f"sqlite+aiosqlite:///{db_file}"
-    
-    @property
-    def DATABASE_FILE(self) -> str:
-        """Full path to the SQLite database file"""
-        return os.path.join(self.DB_PATH, self.DB_NAME)
-    
+        """Async MariaDB connection string for FastAPI"""
+        return (
+            f"mysql+aiomysql://{self.MARIADB_USER}:{self.MARIADB_PASSWORD}"
+            f"@{self.MARIADB_HOST}:{self.MARIADB_PORT}/{self.MARIADB_DATABASE}"
+        )
+
     class Config:
         env_file = ".env"
         case_sensitive = True
+
 
 settings = Settings()

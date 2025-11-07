@@ -17,5 +17,7 @@ PyPDF2
 sqlmodel
 pydantic-settings
 alembic
-aiosqlite
 aiofiles
+aiomysql
+pymysql
+cryptography

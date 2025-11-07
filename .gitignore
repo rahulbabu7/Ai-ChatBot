@@ -5,3 +5,4 @@ website_embeddings.json
 .env
 ingest_pdf.py
 client_data
+docker-compose.yml
