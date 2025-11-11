@@ -26,7 +26,7 @@ router = APIRouter(
 )
 
 # Configuration
-CLIENTS_DIR = (BASE_DIR / "../client_data").resolve()  # backend/client_data
+CLIENTS_DIR = (BASE_DIR / "../../client_data").resolve() 
 CLIENTS_DIR.mkdir(exist_ok=True, parents=True)
 
 
