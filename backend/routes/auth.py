@@ -5,9 +5,9 @@ import bcrypt
 import uuid
 from backend.database import get_session  # Your async session dependency
 from backend.models import User  # Your SQLModel User model
-from backend.schemas import SignupRequest, LoginRequest  # Your Pydantic schemas
+from backend.schemas import SignupRequest, LoginRequest, ChangePasswordRequest  # Your Pydantic schemas
 from backend.auth_utils import create_jwt, get_client_from_header  # Your JWT functions
-
+import re
 router = APIRouter(
     prefix='/auth',
     tags=['auth']
@@ -100,3 +100,66 @@ async def get_me(
         "username": user.username,
         "email": user.email
     }
+
+@router.post("/change-password")
+async def change_password(
+    req: ChangePasswordRequest,
+    client_id: str = Depends(get_client_from_header),
+    session: AsyncSession = Depends(get_session)
+):
+    # Validate new password strength
+    if len(req.new_password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 6 characters long"
+        )
+
+    # Check password complexity
+    password_regex = r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]'
+    if not re.match(password_regex, req.new_password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
+        )
+
+    # Check if new password is same as current
+    if req.current_password == req.new_password:
+        raise HTTPException(
+            status_code=400,
+            detail="New password must be different from current password"
+        )
+
+    # Get user from database
+    stmt = select(User).where(User.client_id == client_id)
+    result = await session.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Verify current password
+    stored_password = user.password
+    if isinstance(stored_password, bytes):
+        stored_password = stored_password.decode()
+
+    if not bcrypt.checkpw(req.current_password.encode(), stored_password.encode()):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    # Hash new password and update
+    try:
+        new_hashed_password = bcrypt.hashpw(req.new_password.encode(), bcrypt.gensalt()).decode()
+        user.password = new_hashed_password
+
+        await session.commit()
+        await session.refresh(user)
+
+        return {
+            "success": True,
+            "message": "Password changed successfully"
+        }
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to change password: {str(e)}"
+        )
