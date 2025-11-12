@@ -67,13 +67,16 @@ export default function Header() {
   };
 
   const copyToClipboard = () => {
-    navigator.clipboard.writeText(shareUrl).then(() => {
-      setSuccess('Link copied to clipboard!');
-      setTimeout(() => setSuccess(''), 3000);
-    }).catch(err => {
-      setError('Failed to copy link');
-      console.error('Failed to copy: ', err);
-    });
+    navigator.clipboard
+      .writeText(shareUrl)
+      .then(() => {
+        setSuccess('Link copied to clipboard!');
+        setTimeout(() => setSuccess(''), 3000);
+      })
+      .catch((err) => {
+        setError('Failed to copy link');
+        console.error('Failed to copy: ', err);
+      });
   };
 
   const shareViaNative = async () => {
@@ -82,7 +85,7 @@ export default function Header() {
         await navigator.share({
           title: 'Check out this app',
           text: 'Check out this amazing application!',
-          url: shareUrl,
+          url: shareUrl
         });
       } catch (err) {
         console.error('Error sharing:', err);
@@ -101,7 +104,7 @@ export default function Header() {
 
   const handlePasswordChange = (e) => {
     const { name, value } = e.target;
-    setPasswordData(prev => ({
+    setPasswordData((prev) => ({
       ...prev,
       [name]: value
     }));
@@ -120,19 +123,19 @@ export default function Header() {
     }
 
     if (passwordData.newPassword.length < 6) {
-      setError("Password must be at least 6 characters long!");
+      setError('Password must be at least 6 characters long!');
       return false;
     }
 
     if (passwordData.currentPassword === passwordData.newPassword) {
-      setError("New password must be different from current password");
+      setError('New password must be different from current password');
       return false;
     }
 
     // Additional security validations
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/;
     if (!passwordRegex.test(passwordData.newPassword)) {
-      setError("Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character");
+      setError('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character');
       return false;
     }
 
@@ -142,7 +145,7 @@ export default function Header() {
   const submitPasswordChange = async () => {
     setError('');
     setSuccess('');
-    
+
     if (!validatePassword()) {
       return;
     }
@@ -150,20 +153,28 @@ export default function Header() {
     setLoading(true);
 
     try {
-      // Since backend endpoint is not available, we'll simulate the process
-      // In a real application, this would call your backend API
-      
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // For demo purposes - in real app, this would be handled by backend
-      console.log('Password change requested:', {
-        currentPassword: '***',
-        newPassword: '***'
+      const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
+
+      const response = await fetch(`${API_URL}/auth/change-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          current_password: passwordData.currentPassword,
+          new_password: passwordData.newPassword
+        })
       });
-      
-      setSuccess('Password change request received! In a real application, your password would be updated.');
-      
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Failed to change password');
+      }
+
+      setSuccess('Password changed successfully!');
+
       setTimeout(() => {
         setShowPasswordModal(false);
         setPasswordData({
@@ -172,11 +183,10 @@ export default function Header() {
           confirmPassword: ''
         });
         setSuccess('');
-      }, 3000);
-
+      }, 2000);
     } catch (error) {
       console.error('Error changing password:', error);
-      setError('Error processing password change. Please try again.');
+      setError(error.message || 'Error changing password. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -253,11 +263,7 @@ export default function Header() {
           {error && <Alert variant="danger">{error}</Alert>}
           <p>Share this application with others:</p>
           <div className="input-group mb-3">
-            <Form.Control 
-              type="text" 
-              value={shareUrl} 
-              readOnly 
-            />
+            <Form.Control type="text" value={shareUrl} readOnly />
             <Button variant="outline-secondary" onClick={copyToClipboard}>
               Copy
             </Button>
@@ -281,7 +287,7 @@ export default function Header() {
         <Modal.Body>
           {success && <Alert variant="success">{success}</Alert>}
           {error && <Alert variant="danger">{error}</Alert>}
-          
+
           <Form>
             <Form.Group className="mb-3">
               <Form.Label>Current Password</Form.Label>
@@ -325,11 +331,7 @@ export default function Header() {
           <Button variant="secondary" onClick={closePasswordModal} disabled={loading}>
             Cancel
           </Button>
-          <Button 
-            variant="primary" 
-            onClick={submitPasswordChange} 
-            disabled={loading}
-          >
+          <Button variant="primary" onClick={submitPasswordChange} disabled={loading}>
             {loading ? 'Changing Password...' : 'Change Password'}
           </Button>
         </Modal.Footer>

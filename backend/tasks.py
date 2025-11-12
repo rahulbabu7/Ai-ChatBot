@@ -18,7 +18,8 @@ from llm_service import chat_with_model, explain_context
 logger = get_task_logger(__name__)
 
 CRAWLER_DIR = os.path.abspath(os.path.join(BASE_DIR, "../Chatbot/crawler"))
-CLIENTS_DIR = os.path.join(BASE_DIR, "client_data")
+CLIENTS_DIR = os.path.abspath(os.path.join(BASE_DIR, "../client_data"))
+
 os.makedirs(CLIENTS_DIR, exist_ok=True)
 
 

@@ -182,8 +182,9 @@ def run_pipeline(client_id: str, source_type="crawl"):
     script_dir = os.path.dirname(os.path.abspath(__file__))  # /Chatbot/processing
     chatbot_dir = os.path.dirname(script_dir)                # /Chatbot
     project_root = os.path.dirname(chatbot_dir)              # /ProjectRoot
-    base_dir = os.path.join(project_root, "backend", "client_data", client_id)
-    chroma_dir = os.path.join(project_root, "chatbot", "vector-database", "chroma_db")
+    # base_dir = os.path.join(project_root, "backend", "client_data", client_id)
+    base_dir = os.path.join(project_root,"client_data", client_id)
+    chroma_dir = os.path.join(project_root, "ChromaDatabase", "vector-database", "chroma_db")
 
     # Output files
     chunk_path = os.path.join(base_dir, "chunks.json")

@@ -1,78 +1,145 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, X, User, Bot, UserCheck } from "lucide-react";
+import { Send, X, User, Bot, UserCheck, RefreshCw, Plus } from "lucide-react";
+
 import { API_URL } from "../config";
 
 const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [showSessionPrompt, setShowSessionPrompt] = useState(true);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [hasExistingSession, setHasExistingSession] = useState(false);
   const messagesEndRef = useRef(null);
+
+  // Check for existing session on mount
+  useEffect(() => {
+    const storageKey = `chatbot_session_${clientId}`;
+    const savedData = localStorage.getItem(storageKey);
+
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData);
+        const sessionAge = Date.now() - parsed.timestamp;
+        const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+
+        // Clear session if older than 7 days
+        if (sessionAge > SEVEN_DAYS) {
+          localStorage.removeItem(storageKey);
+          setHasExistingSession(false);
+        } else {
+          setCurrentSessionId(parsed.sessionId);
+          setHasExistingSession(true);
+        }
+      } catch (e) {
+        // Handle old format (plain string)
+        setCurrentSessionId(savedData);
+        setHasExistingSession(true);
+      }
+    } else if (sessionId) {
+      const sessionData = {
+        sessionId: sessionId,
+        timestamp: Date.now(),
+      };
+      setCurrentSessionId(sessionId);
+      setHasExistingSession(true);
+      localStorage.setItem(storageKey, JSON.stringify(sessionData));
+    }
+  }, [clientId, sessionId]);
 
   // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  // Load chat history on mount
-  useEffect(() => {
-    const loadHistory = async () => {
-      try {
-        const response = await fetch(
-          `${API_URL}/client/chat-history/${clientId}/${sessionId}`,
-          {
-            headers: {
-              "Content-Type": "application/json",
-              "X-Chatbot-Key": chatbotKey,
-            },
-          }
+  // Load chat history
+  const loadHistory = async (sessId) => {
+    try {
+      const response = await fetch(
+        `${API_URL}/client/chat-history/${clientId}/${sessId}`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "X-Chatbot-Key": chatbotKey,
+          },
+        },
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const activeMessages = (data.chats || []).filter(
+          (chat) => chat.is_active !== 0,
         );
 
-        if (response.ok) {
-          const data = await response.json();
-          const activeMessages = (data.chats || []).filter(
-            (chat) => chat.is_active !== 0
-          );
-          
-          setMessages(
-            activeMessages.map((chat) => ({
-              sender: chat.role === "user" ? "user" : "bot",
-              text: chat.message,
-              timestamp: new Date(chat.created_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-              admin_override: chat.admin_override === 1,
-            }))
-          );
-        }
-      } catch (err) {
-        console.error("Failed to load history:", err);
+        setMessages(
+          activeMessages.map((chat) => ({
+            sender: chat.role === "user" ? "user" : "bot",
+            text: chat.message,
+            timestamp: new Date(chat.created_at).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            admin_override: chat.admin_override === 1,
+          })),
+        );
       }
-    };
-
-    if (clientId && chatbotKey && sessionId) {
-      loadHistory();
+    } catch (err) {
+      console.error("Failed to load history:", err);
     }
-  }, [sessionId, chatbotKey, clientId]);
+  };
+
+  // Handle session selection
+  // const handleLoadSession = () => {
+  //   setShowSessionPrompt(false);
+  //   if (currentSessionId) {
+  //     loadHistory(currentSessionId);
+  //     // Update timestamp when session is accessed
+  //     const storageKey = `chatbot_session_${clientId}`;
+  //     const sessionData = {
+  //       sessionId: currentSessionId,
+  //       timestamp: Date.now(),
+  //     };
+  //     localStorage.setItem(storageKey, JSON.stringify(sessionData));
+  //   }
+  // };
+
+  const handleNewSession = () => {
+    // Generate a new session ID
+    const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    setCurrentSessionId(newSessionId);
+    setMessages([]);
+    setShowSessionPrompt(false);
+
+    // Save new session to localStorage with timestamp
+    const storageKey = `chatbot_session_${clientId}`;
+    const sessionData = {
+      sessionId: newSessionId,
+      timestamp: Date.now(),
+    };
+    localStorage.setItem(storageKey, JSON.stringify(sessionData));
+    setHasExistingSession(true);
+  };
 
   // Poll for new messages every 3 seconds (to catch admin replies)
   useEffect(() => {
+    if (showSessionPrompt) return; // Don't poll if session prompt is showing
+
     const pollMessages = async () => {
       try {
         const response = await fetch(
-          `${API_URL}/client/chat-history/${clientId}/${sessionId}`,
+          `${API_URL}/client/chat-history/${clientId}/${currentSessionId}`,
           {
             headers: {
               "Content-Type": "application/json",
               "X-Chatbot-Key": chatbotKey,
             },
-          }
+          },
         );
 
         if (response.ok) {
           const data = await response.json();
           const activeMessages = (data.chats || []).filter(
-            (chat) => chat.is_active !== 0
+            (chat) => chat.is_active !== 0,
           );
 
           // Only update if message count changed
@@ -86,7 +153,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
                   minute: "2-digit",
                 }),
                 admin_override: chat.admin_override === 1,
-              }))
+              })),
             );
           }
         }
@@ -95,11 +162,17 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       }
     };
 
-    if (clientId && chatbotKey && sessionId) {
+    if (clientId && chatbotKey && currentSessionId) {
       const interval = setInterval(pollMessages, 3000);
       return () => clearInterval(interval);
     }
-  }, [sessionId, chatbotKey, clientId, messages.length]);
+  }, [
+    currentSessionId,
+    chatbotKey,
+    clientId,
+    messages.length,
+    showSessionPrompt,
+  ]);
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -127,7 +200,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           "X-Chatbot-Key": chatbotKey,
         },
         body: JSON.stringify({
-          session_id: sessionId,
+          session_id: currentSessionId,
           message: userInput,
         }),
       });
@@ -262,6 +335,133 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         </button>
       </div>
 
+      {/* Session Prompt Overlay */}
+      {showSessionPrompt && (
+        <div
+          style={{
+            position: "absolute",
+            top: "60px",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(255, 255, 255, 0.98)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "32px",
+            zIndex: 10,
+          }}
+        >
+          <div
+            style={{
+              width: "80px",
+              height: "80px",
+              backgroundColor: "#f0f2f5",
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginBottom: "24px",
+            }}
+          >
+            <Bot size={40} color="#6366f1" />
+          </div>
+
+          <h3
+            style={{
+              fontSize: "18px",
+              fontWeight: "600",
+              color: "#1f2937",
+              margin: "0 0 8px 0",
+              textAlign: "center",
+            }}
+          >
+            Welcome back!
+          </h3>
+
+          <p
+            style={{
+              fontSize: "14px",
+              color: "#6b7280",
+              margin: "0 0 32px 0",
+              textAlign: "center",
+              lineHeight: "1.5",
+            }}
+          >
+            Would you like to continue your previous conversation or start
+            fresh?
+          </p>
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+              width: "100%",
+            }}
+          >
+            {/* {hasExistingSession && (
+              <button
+                onClick={handleLoadSession}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "10px",
+                  padding: "14px 24px",
+                  backgroundColor: "#6366f1",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "10px",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  transition: "background-color 0.2s",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.backgroundColor = "#4f46e5")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.backgroundColor = "#6366f1")
+                }
+              >
+                <RefreshCw size={16} />
+                Continue Previous Session
+              </button>
+            )}*/}
+
+            <button
+              onClick={handleNewSession}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "10px",
+                padding: "14px 24px",
+                backgroundColor: "white",
+                color: "#6366f1",
+                border: "2px solid #6366f1",
+                borderRadius: "10px",
+                fontSize: "14px",
+                fontWeight: "600",
+                cursor: "pointer",
+                transition: "all 0.2s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "#f0f2f5";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "white";
+              }}
+            >
+              <Plus size={16} />
+              Start New Conversation
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <div
         style={{
@@ -271,6 +471,8 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           display: "flex",
           flexDirection: "column",
           gap: "12px",
+          opacity: showSessionPrompt ? 0.3 : 1,
+          pointerEvents: showSessionPrompt ? "none" : "auto",
         }}
       >
         {messages.length === 0 && (
@@ -305,8 +507,8 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
                   msg.sender === "user"
                     ? "#e5e7eb"
                     : msg.admin_override
-                    ? "#10b981"
-                    : "#6366f1",
+                      ? "#10b981"
+                      : "#6366f1",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -353,8 +555,8 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
                     msg.sender === "user"
                       ? "#6366f1"
                       : msg.admin_override
-                      ? "#10b981"
-                      : "white",
+                        ? "#10b981"
+                        : "white",
                   color:
                     msg.sender === "user" || msg.admin_override
                       ? "white"
@@ -369,8 +571,8 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
                     msg.sender === "bot" && !msg.admin_override
                       ? "1px solid #e5e7eb"
                       : msg.admin_override
-                      ? "2px solid #059669"
-                      : "none",
+                        ? "2px solid #059669"
+                        : "none",
                   whiteSpace: "pre-wrap",
                 }}
               >
@@ -438,6 +640,8 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           backgroundColor: "white",
           padding: "12px",
           borderTop: "1px solid #e5e7eb",
+          opacity: showSessionPrompt ? 0.3 : 1,
+          pointerEvents: showSessionPrompt ? "none" : "auto",
         }}
       >
         <div

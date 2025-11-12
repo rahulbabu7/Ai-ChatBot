@@ -17,12 +17,11 @@ from chromadb import PersistentClient
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Chroma DB lives inside Chatbot repo
-CHROMA_DB_DIR = os.path.abspath(os.path.join(_THIS_DIR, "..","..","chatbot", "vector-database", "chroma_db"))
+CHROMA_DB_DIR = os.path.abspath(os.path.join(_THIS_DIR, "..","..","ChromaDatabase", "vector-database", "chroma_db"))
 
 # Client data lives in backend/client_data/<client_id>/
 BACKEND_ROOT = os.path.abspath(os.path.join(_THIS_DIR, "..", "..", "backend"))
-CLIENT_DATA_DIR = os.path.join(BACKEND_ROOT, "client_data")
-
+CLIENT_DATA_DIR = os.path.abspath(os.path.join(BACKEND_ROOT,"..", "client_data"))
 # Groq model
 GROQ_MODEL = settings.GROQ_MODEL
 GROQ_API_KEY = settings.GROQ_API_KEY

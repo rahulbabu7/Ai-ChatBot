@@ -179,7 +179,7 @@ async def get_chats(
             "country_code": chat.country_code,
             "admin_override": chat.admin_override,
             "is_active": chat.is_active,
-            "created_at": chat.created_at.format() if chat.created_at else None
+            "created_at": chat.created_at.isoformat() if chat.created_at else None
         }
         for chat in chats
     ]
