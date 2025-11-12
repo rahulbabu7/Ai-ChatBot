@@ -4,8 +4,7 @@ import threading
 import re
 from functools import lru_cache
 from typing import List, Dict, Any, Optional
-
-from dotenv import load_dotenv
+from backend.config import settings
 from groq import Groq
 from sentence_transformers import SentenceTransformer, CrossEncoder, util
 from chromadb import PersistentClient
@@ -13,20 +12,19 @@ from chromadb import PersistentClient
 # ──────────────────────────────────────────────────────────────────────────────
 # Paths & Config
 # ──────────────────────────────────────────────────────────────────────────────
-load_dotenv()
+
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Chroma DB lives inside Chatbot repo
-CHROMA_DB_DIR = os.path.abspath(os.path.join(_THIS_DIR, "..","..","chatbot", "vector-database", "chroma_db"))
+CHROMA_DB_DIR = os.path.abspath(os.path.join(_THIS_DIR, "..","..","ChromaDatabase", "vector-database", "chroma_db"))
 
 # Client data lives in backend/client_data/<client_id>/
 BACKEND_ROOT = os.path.abspath(os.path.join(_THIS_DIR, "..", "..", "backend"))
-CLIENT_DATA_DIR = os.path.join(BACKEND_ROOT, "client_data")
-
+CLIENT_DATA_DIR = os.path.abspath(os.path.join(BACKEND_ROOT,"..", "client_data"))
 # Groq model
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL = settings.GROQ_MODEL
+GROQ_API_KEY = settings.GROQ_API_KEY
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Global singletons with lazy init
