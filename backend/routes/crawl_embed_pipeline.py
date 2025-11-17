@@ -20,7 +20,7 @@ router = APIRouter(
     tags=['tasks']
 )
 
-@router.get("/")
+@router.get("")
 async def get_client(
     client_id: str = Depends(get_client_from_header),
     session: AsyncSession = Depends(get_session)
