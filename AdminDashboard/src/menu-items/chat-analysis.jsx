@@ -31,6 +31,13 @@ const chatAnalysis = {
           type: 'item',
           url: '/missed-chats',
           breadcrumbs: false
+        },
+        {
+          id: 'first-response-time',
+          title: 'First Response Time',
+          type: 'item',
+          url: '/first-response-time',
+          breadcrumbs: false
         }
       ]
     }
