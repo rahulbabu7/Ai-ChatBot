@@ -21,3 +21,8 @@ aiofiles
 aiomysql
 pymysql
 cryptography
+playwright 
+beautifulsoup4
+lxml
+langchain
+langchain-core
