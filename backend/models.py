@@ -5,7 +5,7 @@ from typing import Optional, List
 import uuid
 
 from sqlmodel import SQLModel, Field, select
-from sqlalchemy import Column, String, Integer, Text, DateTime, Index
+from sqlalchemy import Column, String, Integer, Text, DateTime, Index,Float
 from sqlalchemy.sql import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,7 +52,10 @@ class Chat(SQLModel, table=True):
     country_code: str = Field(default="unknown", sa_column=Column(String(10), nullable=False))
     admin_override: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default="0"))
     is_active: int = Field(default=1, sa_column=Column(Integer, nullable=False, server_default="1"))
-
+    response_time: Optional[float] = Field(
+            default=None,
+            sa_column=Column(Float, nullable=True)
+        )  #
 
 class DomainMapping(SQLModel, table=True):
     __tablename__ = "domain_mappings"

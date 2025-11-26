@@ -31,6 +31,14 @@ async def client_chat(
     session: AsyncSession = Depends(get_session),
     x_chatbot_key: str = Header(None)
 ):
+    """Chat endpoint with response time tracking"""
+    import time
+    import requests
+    import uuid
+
+    # Start timing
+    start_time = time.time()
+
     # Validate client + chatbot_key
     stmt = select(User).where(
         User.client_id == client_id,
@@ -65,14 +73,15 @@ async def client_chat(
         message=req.message,
         user_agent=user_agent,
         country_code=country_code,
-        admin_override=0,  # int, not bool
-        is_active=1  # int, not bool
+        admin_override=0,
+        is_active=1
     )
     session.add(user_chat)
     await session.commit()
 
-    # Generate chatbot reply
+    # Generate chatbot reply and measure time
     bot_response = chat_with_model(client_id, req.message)
+    response_time = time.time() - start_time
 
     # Extract just the answer text from the response dictionary
     bot_reply = (
@@ -81,7 +90,7 @@ async def client_chat(
         else str(bot_response)
     )
 
-    # Store assistant reply
+    # Store assistant reply with response time
     assistant_chat = Chat(
         client_id=client_id,
         session_id=session_id,
@@ -89,8 +98,9 @@ async def client_chat(
         message=bot_reply,
         user_agent=user_agent,
         country_code=country_code,
-        admin_override=0,  # int, not bool
-        is_active=1  # int, not bool
+        admin_override=0,
+        is_active=1,
+        response_time=response_time  # ← THIS IS THE ONLY NEW LINE YOU NEED
     )
     session.add(assistant_chat)
     await session.commit()
@@ -102,7 +112,6 @@ async def client_chat(
         "confidence": bot_response.get("confidence") if isinstance(bot_response, dict) else None,
         "type": bot_response.get("type") if isinstance(bot_response, dict) else None
     }
-
 
 @router.post("/context/{client_id}")
 async def context_endpoint(
@@ -142,10 +151,10 @@ async def get_sessions(
             .distinct()
             .order_by(Chat.created_at.desc())
         )
-        
+
         result = await session.execute(stmt)
         sessions = result.scalars().all()
-        
+
         return {"sessions": sessions}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sessions: {str(e)}")
