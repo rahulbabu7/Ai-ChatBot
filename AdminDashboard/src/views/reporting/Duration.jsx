@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 
 // Material-UI Components
 import {
@@ -25,379 +26,302 @@ import {
   Alert
 } from '@mui/material';
 
-// Recharts for charts
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer
-} from 'recharts';
+// Recharts
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
-// API service - make sure this is properly configured
-import apiService from 'services/apiService';
+import { API_URL } from '../../config';
 
 const Duration = () => {
-  // State for filters
+  // State management
   const [dateRange, setDateRange] = useState('last7days');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Real data states
   const [dailyStats, setDailyStats] = useState([]);
   const [dashboardStats, setDashboardStats] = useState({
     total_sessions: 0,
     today_sessions: 0,
     today_visitors: 0,
-    active_users_now: 0
+    active_users_now: 0,
+    avg_response_time: 0,
+    total_messages: 0
   });
   const [chatSessions, setChatSessions] = useState([]);
 
-  // Fetch all data on component mount and when dateRange changes
-  useEffect(() => {
-    fetchAllData();
-  }, [dateRange]);
+  // Create axios instance with auth
+  const createApi = useCallback(() => {
+    const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
+    return axios.create({
+      baseURL: API_URL,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+  }, []);
 
-  const fetchAllData = async () => {
+  // Get date range parameters
+  const getDateRangeParams = useCallback((range) => {
+    const now = new Date();
+    const start = new Date();
+
+    switch (range) {
+      case 'today':
+        start.setHours(0, 0, 0, 0);
+        return {
+          start_date: start.toISOString().split('T')[0],
+          end_date: now.toISOString().split('T')[0]
+        };
+      case 'yesterday':
+        start.setDate(now.getDate() - 1);
+        start.setHours(0, 0, 0, 0);
+        now.setDate(now.getDate() - 1);
+        now.setHours(23, 59, 59, 999);
+        return {
+          start_date: start.toISOString().split('T')[0],
+          end_date: now.toISOString().split('T')[0]
+        };
+      case 'last7days':
+        start.setDate(now.getDate() - 6);
+        return {
+          start_date: start.toISOString().split('T')[0],
+          end_date: now.toISOString().split('T')[0]
+        };
+      case 'last30days':
+        start.setDate(now.getDate() - 29);
+        return {
+          start_date: start.toISOString().split('T')[0],
+          end_date: now.toISOString().split('T')[0]
+        };
+      default:
+        start.setDate(now.getDate() - 6);
+        return {
+          start_date: start.toISOString().split('T')[0],
+          end_date: now.toISOString().split('T')[0]
+        };
+    }
+  }, []);
+
+  // Fetch all data
+  const fetchAllData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      // Get date range parameters for API calls
+      const api = createApi();
       const dateParams = getDateRangeParams(dateRange);
-      
+
+      console.log('📅 Fetching data with params:', dateParams);
+
       const [dailyResponse, dashboardResponse, sessionsResponse] = await Promise.all([
-        apiService.get('/client/stats/daily', { params: dateParams }),
-        apiService.get('/client/stats/dashboard'),
-        apiService.get('/client/sessions/me', { params: dateParams })
+        api.get('/client/stats/daily', { params: dateParams }),
+        api.get('/client/stats/dashboard'),
+        api.get('/client/sessions/me')
       ]);
 
-      console.log('Raw API Responses:', {
-        daily: dailyResponse,
-        dashboard: dashboardResponse,
-        sessions: sessionsResponse
+      console.log('✅ API Responses:', {
+        daily: dailyResponse.data,
+        dashboard: dashboardResponse.data,
+        sessions: sessionsResponse.data
       });
 
-      // Transform daily stats for line chart - using ONLY REAL data
-      const transformedDailyStats = transformDailyStats(dailyResponse);
-      setDailyStats(transformedDailyStats);
-      
-      // Set dashboard stats
-      setDashboardStats(dashboardResponse);
-      
-      // Fetch detailed session data
-      await fetchSessionDetails(sessionsResponse);
+      // Transform and set daily stats
+      const transformed = transformDailyStats(dailyResponse.data.daily_stats || []);
+      setDailyStats(transformed);
 
+      // Set dashboard stats
+      setDashboardStats(dashboardResponse.data);
+
+      // Fetch session details
+      await fetchSessionDetails(sessionsResponse.data.sessions || []);
     } catch (err) {
-      const errorMessage = err.response?.data?.message || 'Failed to fetch data from server. Please check your connection and try again.';
-      setError(errorMessage);
-      console.error('Error fetching data:', err);
-      
-      // Set empty states - NO FALLBACK DATA
+      const errorMsg = err.response?.data?.detail || err.message || 'Failed to fetch data';
+      setError(errorMsg);
+      console.error('❌ Error fetching data:', err);
+
+      // Clear data on error
       setDailyStats([]);
       setChatSessions([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [dateRange, createApi, getDateRangeParams]);
 
-  // Helper function to get date range parameters
-  const getDateRangeParams = (range) => {
-    const now = new Date();
-    const startDate = new Date();
-    
-    switch (range) {
-      case 'today':
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'yesterday':
-        startDate.setDate(now.getDate() - 1);
-        startDate.setHours(0, 0, 0, 0);
-        const yesterdayEnd = new Date(startDate);
-        yesterdayEnd.setHours(23, 59, 59, 999);
+  // Load data on mount and when date range changes
+  useEffect(() => {
+    fetchAllData();
+  }, [fetchAllData]);
+
+  // Transform daily stats for chart
+  const transformDailyStats = (stats) => {
+    if (!Array.isArray(stats) || stats.length === 0) {
+      console.warn('No daily stats to transform');
+      return [];
+    }
+
+    return stats
+      .map((stat) => {
+        const responseTime = stat.avg_response_time || 0;
+
         return {
-          start_date: startDate.toISOString(),
-          end_date: yesterdayEnd.toISOString()
+          name: new Date(stat.date).toLocaleDateString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric'
+          }),
+          date: stat.date,
+          visitors: stat.visitors || 0,
+          chats: stat.chats || 0,
+          responseTime: Math.round(responseTime * 100) / 100, // Round to 2 decimals
+          responseTimeMin: Math.round((responseTime / 60) * 10) / 10 // Convert to minutes
         };
-      case 'last7days':
-        startDate.setDate(now.getDate() - 7);
-        break;
-      case 'last30days':
-        startDate.setDate(now.getDate() - 30);
-        break;
-      default:
-        startDate.setDate(now.getDate() - 7);
-    }
-    
-    return {
-      start_date: startDate.toISOString(),
-      end_date: now.toISOString()
-    };
+      })
+      .filter((stat) => stat !== null);
   };
 
-  // Transform daily stats from API response - NO FAKE DATA
-  const transformDailyStats = (dailyResponse) => {
-    // Check if we have the expected data structure
-    if (!dailyResponse || !dailyResponse.daily_stats || !Array.isArray(dailyResponse.daily_stats)) {
-      console.warn('No daily_stats found in response:', dailyResponse);
-      return [];
-    }
-
-    const validStats = dailyResponse.daily_stats.filter(stat => {
-      // Only include stats that have real duration data
-      const hasDurationData = 
-        (stat.shortest_duration !== undefined && stat.shortest_duration !== null) ||
-        (stat.average_duration !== undefined && stat.average_duration !== null) ||
-        (stat.longest_duration !== undefined && stat.longest_duration !== null);
-      
-      if (!hasDurationData) {
-        console.warn('Skipping stat due to missing duration data:', stat);
-      }
-      
-      return hasDurationData;
-    });
-
-    if (validStats.length === 0) {
-      console.warn('No valid daily stats with duration data found');
-      return [];
-    }
-
-    return validStats.map(stat => {
-      // Use ONLY actual duration data from API
-      // If any duration field is missing, skip the stat or use null
-      const shortest = stat.shortest_duration !== undefined ? stat.shortest_duration / 60 : null; // Convert to minutes
-      const longest = stat.longest_duration !== undefined ? stat.longest_duration / 60 : null; // Convert to minutes
-      const average = stat.average_duration !== undefined ? stat.average_duration / 60 : null; // Convert to minutes
-
-      // If any required duration is missing, return null (will be filtered out)
-      if (shortest === null || average === null || longest === null) {
-        console.warn('Incomplete duration data for stat:', stat);
-        return null;
-      }
-
-      return {
-        name: new Date(stat.date).toLocaleDateString('en-US', { 
-          weekday: 'short', 
-          month: 'short', 
-          day: 'numeric' 
-        }),
-        date: stat.date,
-        visitors: stat.visitors || stat.unique_visitors || 0,
-        chats: stat.chats || stat.total_chats || 0,
-        shortest: Math.round(shortest * 10) / 10,
-        average: Math.round(average * 10) / 10,
-        longest: Math.round(longest * 10) / 10
-      };
-    }).filter(stat => stat !== null);
-  };
-
-  // Fetch detailed session data
-  const fetchSessionDetails = async (sessionsResponse) => {
-    if (!sessionsResponse || !sessionsResponse.sessions || !Array.isArray(sessionsResponse.sessions)) {
-      console.warn('No sessions found in response:', sessionsResponse);
+  // Fetch session details
+  const fetchSessionDetails = async (sessions) => {
+    if (!Array.isArray(sessions) || sessions.length === 0) {
+      console.warn('No sessions to fetch details for');
       setChatSessions([]);
       return;
     }
 
     try {
+      const api = createApi();
+
       // Limit to first 10 sessions for performance
-      const sessionsToFetch = sessionsResponse.sessions.slice(0, 10);
-      
+      const sessionsToFetch = sessions.slice(0, 10);
+
       const sessionDetails = await Promise.all(
-        sessionsToFetch.map(async (session) => {
+        sessionsToFetch.map(async (sessionId) => {
           try {
-            // Use session ID from the session object or the object itself
-            const sessionId = session.id || session.session_id || session;
-            
-            const chatResponse = await apiService.get('/client/chats/me', {
+            const response = await api.get('/client/chats/me', {
               params: { session_id: sessionId }
             });
-            
-            return transformSessionData(sessionId, chatResponse, session);
+
+            return transformSessionData(sessionId, response.data);
           } catch (err) {
-            console.error(`Error fetching details for session:`, err);
-            return null; // Return null instead of fake data
+            console.error(`❌ Error fetching session ${sessionId}:`, err);
+            return null;
           }
         })
       );
 
-      // Filter out null sessions and sessions without real data
-      const validSessions = sessionDetails.filter(session => 
-        session !== null && 
-        session.duration !== 'N/A' && 
-        session.startTime !== 'N/A'
-      );
-      
+      // Filter out null sessions
+      const validSessions = sessionDetails.filter((session) => session !== null);
       setChatSessions(validSessions);
+
+      console.log(`✅ Loaded ${validSessions.length} sessions`);
     } catch (err) {
-      console.error('Error fetching session details:', err);
+      console.error('❌ Error fetching session details:', err);
       setChatSessions([]);
     }
   };
 
-  // Transform session data from API response - NO FAKE DATA
-  const transformSessionData = (sessionId, chatResponse, originalSession) => {
-    // Try to get data from original session first
-    if (originalSession) {
-      const hasValidData = 
-        originalSession.start_time && 
-        originalSession.duration !== undefined && 
-        originalSession.duration !== null;
-      
-      if (hasValidData) {
-        return {
-          id: sessionId,
-          startTime: new Date(originalSession.start_time).toLocaleString(),
-          endTime: originalSession.end_time ? new Date(originalSession.end_time).toLocaleString() : 'N/A',
-          duration: formatDuration(originalSession.duration),
-          status: originalSession.status || 'Unknown',
-          satisfaction: originalSession.satisfaction_score !== undefined ? originalSession.satisfaction_score : 'N/A',
-          messageCount: originalSession.message_count || 0
-        };
-      }
-    }
-
-    // Otherwise, try to calculate from chat data
-    if (!chatResponse || !chatResponse.chats || !Array.isArray(chatResponse.chats)) {
-      console.warn('No chat data available for session:', sessionId);
+  // Transform session data
+  const transformSessionData = (sessionId, chatData) => {
+    if (!chatData || !chatData.chats || !Array.isArray(chatData.chats) || chatData.chats.length === 0) {
       return null;
     }
 
-    const chats = chatResponse.chats;
-    if (chats.length === 0) {
-      console.warn('Empty chat array for session:', sessionId);
-      return null;
-    }
+    const chats = chatData.chats;
+    const firstChat = chats[0];
+    const lastChat = chats[chats.length - 1];
 
-    const userMessages = chats.filter(chat => chat.role === 'user');
-    if (userMessages.length === 0) {
-      console.warn('No user messages in session:', sessionId);
-      return null;
-    }
+    // Calculate duration
+    const startTime = new Date(firstChat.created_at);
+    const endTime = new Date(lastChat.created_at);
 
-    const firstMessage = userMessages[0];
-    const lastMessage = chats[chats.length - 1];
-
-    // Calculate duration based on timestamps - REAL DATA
-    const startTime = new Date(firstMessage.created_at || firstMessage.timestamp);
-    const endTime = new Date(lastMessage.created_at || lastMessage.timestamp);
-    
-    // Validate dates
     if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
-      console.warn('Invalid timestamps for session:', sessionId);
       return null;
     }
 
     const durationMs = endTime - startTime;
-    const durationMinutes = Math.max(1, Math.round(durationMs / (1000 * 60)));
+    const durationMinutes = Math.max(0, Math.round(durationMs / (1000 * 60)));
+
+    // Calculate average response time for this session
+    const responseTimeChats = chats.filter(
+      (chat) => chat.role === 'assistant' && chat.response_time !== null && chat.response_time !== undefined
+    );
+
+    const avgResponseTime =
+      responseTimeChats.length > 0 ? responseTimeChats.reduce((sum, chat) => sum + chat.response_time, 0) / responseTimeChats.length : 0;
 
     return {
       id: sessionId,
       startTime: startTime.toLocaleString(),
       endTime: endTime.toLocaleString(),
       duration: `${durationMinutes} min`,
-      status: 'Calculated', // Indicate this was calculated, not from API
-      satisfaction: 'N/A', // No fake satisfaction scores
-      messageCount: chats.length
+      durationValue: durationMinutes,
+      messageCount: chats.length,
+      avgResponseTime: Math.round(avgResponseTime * 100) / 100,
+      status: durationMinutes === 0 ? 'Instant' : durationMinutes < 5 ? 'Short' : durationMinutes < 15 ? 'Normal' : 'Long',
+      country: firstChat.country_code || 'Unknown'
     };
   };
 
-  // Format duration from seconds to minutes
-  const formatDuration = (durationInSeconds) => {
-    if (durationInSeconds === undefined || durationInSeconds === null) {
-      return 'N/A';
-    }
-    const minutes = Math.round(durationInSeconds / 60);
-    return `${minutes} min`;
-  };
-
-  // Handler for View All Sessions button
-  const handleViewAllSessions = async () => {
-    setLoading(true);
-    try {
-      const dateParams = getDateRangeParams(dateRange);
-      const sessionsResponse = await apiService.get('/client/sessions/me', { 
-        params: { ...dateParams, limit: 50 } // Increase limit for "view all"
-      });
-      
-      await fetchSessionDetails(sessionsResponse);
-      
-    } catch (err) {
-      setError('Failed to fetch all sessions. Please try again.');
-      console.error('Error fetching all sessions:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Calculate overall stats from daily data
   const calculateOverallStats = () => {
     if (dailyStats.length === 0) {
       return {
-        averageDuration: 0,
-        longestDuration: 0,
-        shortestDuration: 0
+        avgDuration: 0,
+        minDuration: 0,
+        maxDuration: 0,
+        avgResponseTime: 0
       };
     }
 
-    const allShortest = dailyStats.map(stat => stat.shortest).filter(d => d > 0);
-    const allAverage = dailyStats.map(stat => stat.average).filter(d => d > 0);
-    const allLongest = dailyStats.map(stat => stat.longest).filter(d => d > 0);
+    const durations = dailyStats.map((stat) => stat.responseTimeMin).filter((d) => d > 0);
 
-    if (allShortest.length === 0) {
+    const responseTimes = dailyStats.map((stat) => stat.responseTime).filter((rt) => rt > 0);
+
+    if (durations.length === 0) {
       return {
-        averageDuration: 0,
-        longestDuration: 0,
-        shortestDuration: 0
+        avgDuration: 0,
+        minDuration: 0,
+        maxDuration: 0,
+        avgResponseTime: 0
       };
     }
-
-    const average = Math.round(allAverage.reduce((a, b) => a + b, 0) / allAverage.length * 10) / 10;
-    const longest = Math.max(...allLongest);
-    const shortest = Math.min(...allShortest);
 
     return {
-      averageDuration: average,
-      longestDuration: longest,
-      shortestDuration: shortest
+      avgDuration: Math.round((durations.reduce((a, b) => a + b, 0) / durations.length) * 10) / 10,
+      minDuration: Math.min(...durations),
+      maxDuration: Math.max(...durations),
+      avgResponseTime:
+        responseTimes.length > 0 ? Math.round((responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length) * 100) / 100 : 0
     };
   };
 
   const stats = calculateOverallStats();
 
-  // Custom tooltip for the line chart
+  // Custom tooltip for chart
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <Box sx={{ 
-          bgcolor: 'background.paper', 
-          p: 2, 
-          border: 1, 
-          borderColor: 'divider', 
-          borderRadius: 1,
-          boxShadow: 3
-        }}>
+        <Box
+          sx={{
+            bgcolor: 'background.paper',
+            p: 2,
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 1,
+            boxShadow: 3
+          }}
+        >
           <Typography variant="body2" fontWeight="bold" gutterBottom>
             {label}
           </Typography>
-          {payload.map((entry, index) => (
-            <Typography 
-              key={index} 
-              variant="body2" 
-              sx={{ color: entry.color }}
-              gutterBottom
-            >
-              {entry.name}: <strong>{entry.value} min</strong>
-            </Typography>
-          ))}
-          <Typography variant="body2" color="text.secondary">
-            Visitors: {data.visitors || 0}
+          <Typography variant="body2" sx={{ color: payload[0].color }} gutterBottom>
+            Response Time: <strong>{data.responseTime}s</strong>
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Chats: {data.chats || 0}
+            Visitors: {data.visitors}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Messages: {data.chats}
           </Typography>
         </Box>
       );
@@ -405,23 +329,24 @@ const Duration = () => {
     return null;
   };
 
+  // Get status color
   const getStatusColor = (status) => {
-    const statusColors = {
-      'Resolved': 'success',
-      'Pending': 'warning',
-      'Closed': 'error',
-      'Active': 'info',
-      'Calculated': 'info'
+    const colors = {
+      Instant: 'success',
+      Short: 'info',
+      Normal: 'primary',
+      Long: 'warning'
     };
-    return statusColors[status] || 'default';
+    return colors[status] || 'default';
   };
 
-  if (loading && chatSessions.length === 0) {
+  // Loading state
+  if (loading && dailyStats.length === 0) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
         <CircularProgress />
         <Typography variant="h6" sx={{ ml: 2 }}>
-          Loading chat duration analytics...
+          Loading duration analytics...
         </Typography>
       </Box>
     );
@@ -429,14 +354,14 @@ const Duration = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header Section with Title and Refresh Button */}
+      {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" fontWeight="bold">
           Chat Duration Analytics
         </Typography>
-        <Button 
-          variant="contained" 
-          color="primary" 
+        <Button
+          variant="contained"
+          color="primary"
           onClick={fetchAllData}
           disabled={loading}
           startIcon={loading ? <CircularProgress size={20} /> : null}
@@ -445,18 +370,12 @@ const Duration = () => {
         </Button>
       </Box>
 
+      {/* Error Alert */}
       {error && (
         <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 3 }}>
           {error}
         </Alert>
       )}
-
-      {/* Debug information - remove in production */}
-      <Alert severity="info" sx={{ mb: 2 }}>
-        <Typography variant="body2">
-          Data Status: {dailyStats.length} daily stats, {chatSessions.length} sessions
-        </Typography>
-      </Alert>
 
       {/* Filter and Stats Card */}
       <Card sx={{ mb: 3 }}>
@@ -465,11 +384,7 @@ const Duration = () => {
             <Grid item xs={12} md={4}>
               <FormControl fullWidth size="small">
                 <InputLabel>Date Range</InputLabel>
-                <Select
-                  value={dateRange}
-                  label="Date Range"
-                  onChange={(e) => setDateRange(e.target.value)}
-                >
+                <Select value={dateRange} label="Date Range" onChange={(e) => setDateRange(e.target.value)}>
                   <MenuItem value="today">Today</MenuItem>
                   <MenuItem value="yesterday">Yesterday</MenuItem>
                   <MenuItem value="last7days">Last 7 Days</MenuItem>
@@ -477,17 +392,20 @@ const Duration = () => {
                 </Select>
               </FormControl>
             </Grid>
-            
+
             <Grid item xs={12} md={8}>
               <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <Typography variant="body2" color="text.secondary">
-                  Total Sessions: <strong>{dashboardStats.total_sessions || 0}</strong>
+                  Total Sessions: <strong>{dashboardStats.total_sessions}</strong>
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Today's Visitors: <strong>{dashboardStats.today_visitors || 0}</strong>
+                  Today's Visitors: <strong>{dashboardStats.today_visitors}</strong>
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Active Now: <strong>{dashboardStats.active_users_now || 0}</strong>
+                  Active Now: <strong>{dashboardStats.active_users_now}</strong>
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Avg Response: <strong>{dashboardStats.avg_response_time}s</strong>
                 </Typography>
               </Box>
             </Grid>
@@ -495,40 +413,68 @@ const Duration = () => {
         </CardContent>
       </Card>
 
-      {/* Duration Stats Cards - Only show if we have real data */}
+      {/* Stats Cards */}
       {dailyStats.length > 0 && (
-        <Grid container spacing={5} sx={{ mb: 3 }}>
-          <Grid item xs={12} md={4}>
+        <Grid container spacing={3} sx={{ mb: 3 }}>
+          <Grid item xs={12} md={3}>
             <Card sx={{ bgcolor: '#00C49F', color: 'white', height: '100%' }}>
               <CardContent sx={{ textAlign: 'center' }}>
-                <Typography variant="h7" gutterBottom>Shortest Duration</Typography>
-                <Typography variant="h5" fontWeight="bold">{stats.shortestDuration} min</Typography>
+                <Typography variant="h6" gutterBottom>
+                  Min Duration
+                </Typography>
+                <Typography variant="h4" fontWeight="bold">
+                  {stats.minDuration} min
+                </Typography>
                 <Typography variant="body2" sx={{ mt: 1, opacity: 0.9 }}>
-                  Based on {dailyStats.length} days of real data
+                  Shortest conversation
                 </Typography>
               </CardContent>
             </Card>
           </Grid>
 
-          <Grid item xs={12} md={4}>
+          <Grid item xs={12} md={3}>
             <Card sx={{ bgcolor: '#0088FE', color: 'white', height: '100%' }}>
               <CardContent sx={{ textAlign: 'center' }}>
-                <Typography variant="h7" gutterBottom>Average Duration</Typography>
-                <Typography variant="h5" fontWeight="bold">{stats.averageDuration} min</Typography>
+                <Typography variant="h6" gutterBottom>
+                  Avg Duration
+                </Typography>
+                <Typography variant="h4" fontWeight="bold">
+                  {stats.avgDuration} min
+                </Typography>
                 <Typography variant="body2" sx={{ mt: 1, opacity: 0.9 }}>
-                  Based on {dailyStats.length} days of real data
+                  Average conversation
                 </Typography>
               </CardContent>
             </Card>
           </Grid>
 
-          <Grid item xs={12} md={4}>
+          <Grid item xs={12} md={3}>
             <Card sx={{ bgcolor: '#FF8042', color: 'white', height: '100%' }}>
               <CardContent sx={{ textAlign: 'center' }}>
-                <Typography variant="h7" gutterBottom>Longest Duration</Typography>
-                <Typography variant="h5" fontWeight="bold">{stats.longestDuration} min</Typography>
+                <Typography variant="h6" gutterBottom>
+                  Max Duration
+                </Typography>
+                <Typography variant="h4" fontWeight="bold">
+                  {stats.maxDuration} min
+                </Typography>
                 <Typography variant="body2" sx={{ mt: 1, opacity: 0.9 }}>
-                  Based on {dailyStats.length} days of real data
+                  Longest conversation
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid item xs={12} md={3}>
+            <Card sx={{ bgcolor: '#8884d8', color: 'white', height: '100%' }}>
+              <CardContent sx={{ textAlign: 'center' }}>
+                <Typography variant="h6" gutterBottom>
+                  Avg Response
+                </Typography>
+                <Typography variant="h4" fontWeight="bold">
+                  {stats.avgResponseTime}s
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 1, opacity: 0.9 }}>
+                  AI response time
                 </Typography>
               </CardContent>
             </Card>
@@ -536,99 +482,56 @@ const Duration = () => {
         </Grid>
       )}
 
-      {/* Chart Section - Only show if we have real data */}
+      {/* Chart */}
       <Card sx={{ mb: 3 }}>
-        <CardHeader 
-          title="Daily Chat Duration Analysis" 
-          subheader={dailyStats.length > 0 
-            ? "Showing shortest, average, and longest chat durations over time" 
-            : "No duration data available for the selected period"
+        <CardHeader
+          title="Response Time Trend"
+          subheader={
+            dailyStats.length > 0 ? `Showing AI response times over ${dailyStats.length} days` : 'No data available for the selected period'
           }
         />
         <CardContent>
           {dailyStats.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart
-                data={dailyStats}
-                margin={{ top: 20, right: 40, left: 20, bottom: 5 }}
-              >
+              <LineChart data={dailyStats} margin={{ top: 20, right: 40, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis 
-                  dataKey="name" 
+                <XAxis dataKey="name" axisLine={true} tickLine={false} />
+                <YAxis
                   axisLine={true}
                   tickLine={false}
-                />
-                <YAxis 
-                  axisLine={true}
-                  tickLine={false}
-                  label={{ 
-                    value: 'Duration (minutes)', 
-                    angle: -90, 
-                    position: 'insideLeft',
-                    offset: 10 
-                  }}
+                  label={{ value: 'Response Time (seconds)', angle: -90, position: 'insideLeft', offset: 10 }}
                 />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend />
-                
                 <Line
                   type="monotone"
-                  dataKey="shortest"
-                  name="Shortest Duration"
-                  stroke="#00C49F"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: '#00C49F' }}
-                  activeDot={{ r: 6, fill: '#00C49F' }}
-                />
-                
-                <Line
-                  type="monotone"
-                  dataKey="average"
-                  name="Average Duration"
+                  dataKey="responseTime"
+                  name="Response Time"
                   stroke="#0088FE"
                   strokeWidth={2}
-                  dot={{ r: 3, fill: '#0088FE' }}
+                  dot={{ r: 4, fill: '#0088FE' }}
                   activeDot={{ r: 6, fill: '#0088FE' }}
-                />
-                
-                <Line
-                  type="monotone"
-                  dataKey="longest"
-                  name="Longest Duration"
-                  stroke="#FF8042"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: '#FF8042' }}
-                  activeDot={{ r: 6, fill: '#FF8042' }}
                 />
               </LineChart>
             </ResponsiveContainer>
           ) : (
             <Box display="flex" justifyContent="center" alignItems="center" height={300} flexDirection="column">
               <Typography variant="h6" color="text.secondary" gutterBottom>
-                No duration data available
+                No data available
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Check if your backend API is providing duration data in the expected format
+                Try selecting a different date range or check if data is being tracked
               </Typography>
             </Box>
           )}
         </CardContent>
       </Card>
 
-      {/* Recent Chat Sessions Table */}
+      {/* Sessions Table */}
       <Card>
-        <CardHeader 
-          title="Recent Chat Sessions" 
-          action={
-            <Button 
-              variant="outlined" 
-              size="small"
-              onClick={handleViewAllSessions}
-              disabled={loading}
-            >
-              View All Sessions
-            </Button>
-          }
+        <CardHeader
+          title={`Recent Chat Sessions (${chatSessions.length})`}
+          action={<Chip label={`${chatSessions.length} sessions`} color="primary" variant="outlined" />}
         />
         <CardContent>
           {chatSessions.length > 0 ? (
@@ -638,71 +541,44 @@ const Duration = () => {
                   <TableRow>
                     <TableCell>Session ID</TableCell>
                     <TableCell>Start Time</TableCell>
-                    <TableCell>End Time</TableCell>
                     <TableCell>Duration</TableCell>
                     <TableCell>Messages</TableCell>
+                    <TableCell>Avg Response</TableCell>
                     <TableCell>Status</TableCell>
-                    <TableCell>Satisfaction</TableCell>
+                    <TableCell>Country</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {chatSessions.map((session) => (
                     <TableRow key={session.id} hover>
                       <TableCell>
-                        <Typography variant="body2" fontWeight="bold">
+                        <Typography variant="body2" fontFamily="monospace">
                           {session.id.substring(0, 12)}...
                         </Typography>
                       </TableCell>
-                      <TableCell>{session.startTime}</TableCell>
-                      <TableCell>{session.endTime}</TableCell>
                       <TableCell>
-                        <Typography 
-                          variant="body2" 
+                        <Typography variant="body2">{session.startTime}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography
+                          variant="body2"
                           fontWeight="bold"
-                          color={
-                            parseInt(session.duration) > 20 ? 'error' :
-                            parseInt(session.duration) < 10 ? 'success' : 'text.primary'
-                          }
+                          color={session.durationValue > 20 ? 'error.main' : session.durationValue < 5 ? 'success.main' : 'text.primary'}
                         >
                           {session.duration}
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Chip 
-                          label={session.messageCount} 
-                          size="small"
-                          variant="outlined"
-                        />
+                        <Chip label={session.messageCount} size="small" variant="outlined" color="primary" />
                       </TableCell>
                       <TableCell>
-                        <Chip 
-                          label={session.status} 
-                          size="small"
-                          color={getStatusColor(session.status)}
-                          variant="outlined"
-                        />
+                        <Typography variant="body2">{session.avgResponseTime}s</Typography>
                       </TableCell>
                       <TableCell>
-                        {session.satisfaction !== 'N/A' ? (
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            {[...Array(5)].map((_, i) => (
-                              <Box
-                                key={i}
-                                sx={{
-                                  width: 12,
-                                  height: 12,
-                                  borderRadius: '50%',
-                                  bgcolor: i < session.satisfaction ? 'gold' : 'grey.300',
-                                  mr: 0.5
-                                }}
-                              />
-                            ))}
-                          </Box>
-                        ) : (
-                          <Typography variant="body2" color="text.secondary">
-                            N/A
-                          </Typography>
-                        )}
+                        <Chip label={session.status} size="small" color={getStatusColor(session.status)} variant="outlined" />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{session.country}</Typography>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -711,7 +587,7 @@ const Duration = () => {
             </TableContainer>
           ) : (
             <Typography variant="body1" color="text.secondary" align="center" py={4}>
-              No chat sessions found with real data for the selected period.
+              {loading ? 'Loading sessions...' : 'No chat sessions found for the selected period'}
             </Typography>
           )}
         </CardContent>
