@@ -10,6 +10,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
   const [showSessionPrompt, setShowSessionPrompt] = useState(true);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [hasExistingSession, setHasExistingSession] = useState(false);
+  const [followUpSuggestions, setFollowUpSuggestions] = useState([]);
   const messagesEndRef = useRef(null);
 
   // Check for existing session on mount
@@ -21,9 +22,8 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       try {
         const parsed = JSON.parse(savedData);
         const sessionAge = Date.now() - parsed.timestamp;
-        const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+        const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
 
-        // Clear session if older than 7 days
         if (sessionAge > SEVEN_DAYS) {
           localStorage.removeItem(storageKey);
           setHasExistingSession(false);
@@ -32,7 +32,6 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           setHasExistingSession(true);
         }
       } catch (e) {
-        // Handle old format (plain string)
         setCurrentSessionId(savedData);
         setHasExistingSession(true);
       }
@@ -50,7 +49,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
   // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isTyping]);
+  }, [messages, isTyping, followUpSuggestions]);
 
   // Load chat history
   const loadHistory = async (sessId) => {
@@ -88,29 +87,13 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
     }
   };
 
-  // Handle session selection
-  // const handleLoadSession = () => {
-  //   setShowSessionPrompt(false);
-  //   if (currentSessionId) {
-  //     loadHistory(currentSessionId);
-  //     // Update timestamp when session is accessed
-  //     const storageKey = `chatbot_session_${clientId}`;
-  //     const sessionData = {
-  //       sessionId: currentSessionId,
-  //       timestamp: Date.now(),
-  //     };
-  //     localStorage.setItem(storageKey, JSON.stringify(sessionData));
-  //   }
-  // };
-
   const handleNewSession = () => {
-    // Generate a new session ID
     const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     setCurrentSessionId(newSessionId);
     setMessages([]);
+    setFollowUpSuggestions([]);
     setShowSessionPrompt(false);
 
-    // Save new session to localStorage with timestamp
     const storageKey = `chatbot_session_${clientId}`;
     const sessionData = {
       sessionId: newSessionId,
@@ -120,9 +103,9 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
     setHasExistingSession(true);
   };
 
-  // Poll for new messages every 3 seconds (to catch admin replies)
+  // Poll for new messages
   useEffect(() => {
-    if (showSessionPrompt) return; // Don't poll if session prompt is showing
+    if (showSessionPrompt) return;
 
     const pollMessages = async () => {
       try {
@@ -142,7 +125,6 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
             (chat) => chat.is_active !== 0,
           );
 
-          // Only update if message count changed
           if (activeMessages.length !== messages.length) {
             setMessages(
               activeMessages.map((chat) => ({
@@ -174,8 +156,9 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
     showSessionPrompt,
   ]);
 
-  const handleSend = async () => {
-    if (!input.trim()) return;
+  const handleSend = async (messageText = null) => {
+    const textToSend = messageText || input.trim();
+    if (!textToSend) return;
 
     const timestamp = new Date().toLocaleTimeString([], {
       hour: "2-digit",
@@ -183,14 +166,14 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
     });
     const newMessage = {
       sender: "user",
-      text: input.trim(),
+      text: textToSend,
       timestamp,
     };
 
     setMessages((prev) => [...prev, newMessage]);
-    const userInput = input;
     setInput("");
     setIsTyping(true);
+    setFollowUpSuggestions([]); // Clear suggestions when sending new message
 
     try {
       const res = await fetch(`${API_URL}/client/chat/${clientId}`, {
@@ -200,8 +183,8 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           "X-Chatbot-Key": chatbotKey,
         },
         body: JSON.stringify({
-          session_id: currentSessionId,
-          message: userInput,
+          session_id: currentSessionId, // ← CRITICAL: Maintains conversation context!
+          message: textToSend,
         }),
       });
 
@@ -210,6 +193,17 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       }
 
       const data = await res.json();
+
+      // Update session_id if backend provides a new one
+      if (data.session_id && data.session_id !== currentSessionId) {
+        setCurrentSessionId(data.session_id);
+        const storageKey = `chatbot_session_${clientId}`;
+        const sessionData = {
+          sessionId: data.session_id,
+          timestamp: Date.now(),
+        };
+        localStorage.setItem(storageKey, JSON.stringify(sessionData));
+      }
 
       setTimeout(() => {
         setMessages((prev) => [
@@ -224,6 +218,42 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
             admin_override: false,
           },
         ]);
+
+        // Extract interactive suggestions from response
+        const suggestions = [];
+
+        // Add follow-up question if available
+        if (data.follow_up_question) {
+          suggestions.push({
+            type: "follow_up",
+            text: data.follow_up_question,
+          });
+        }
+
+        // Add clarification questions if available
+        if (
+          data.clarification_questions &&
+          data.clarification_questions.length > 0
+        ) {
+          data.clarification_questions.forEach((q) => {
+            suggestions.push({
+              type: "clarification",
+              text: q,
+            });
+          });
+        }
+
+        // Add probing questions if available
+        if (data.probing_questions && data.probing_questions.length > 0) {
+          data.probing_questions.slice(0, 2).forEach((q) => {
+            suggestions.push({
+              type: "probing",
+              text: q,
+            });
+          });
+        }
+
+        setFollowUpSuggestions(suggestions);
         setIsTyping(false);
       }, 500);
     } catch (err) {
@@ -244,6 +274,35 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         setIsTyping(false);
       }, 500);
     }
+  };
+
+  const handleSuggestionClick = (suggestionText) => {
+    // Extract the actual question from the suggestion
+    // Remove "Would you like..." prefix and convert to direct question
+    let processedText = suggestionText;
+
+    // Handle different suggestion formats
+    if (suggestionText.toLowerCase().startsWith("would you like")) {
+      // "Would you like to know about X?" -> "yes, tell me about X"
+      processedText = suggestionText.replace(
+        /would you like (to know about|to know|me to|about)/gi,
+        "",
+      );
+      processedText = processedText.replace(/\?$/g, "").trim();
+      processedText = `yes, ${processedText}`;
+    } else if (suggestionText.toLowerCase().startsWith("do you need")) {
+      // "Do you need X?" -> "yes, X"
+      processedText = suggestionText
+        .replace(/do you need/gi, "")
+        .replace(/\?$/g, "")
+        .trim();
+      processedText = `yes, ${processedText}`;
+    } else if (suggestionText.endsWith("?")) {
+      // For other questions, just use "yes" as it will be understood in context
+      processedText = "yes";
+    }
+
+    handleSend(processedText);
   };
 
   const handleKeyPress = (e) => {
@@ -377,7 +436,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
               textAlign: "center",
             }}
           >
-            Welcome back!
+            Welcome!
           </h3>
 
           <p
@@ -389,76 +448,36 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
               lineHeight: "1.5",
             }}
           >
-            Would you like to continue your previous conversation or start
-            fresh?
+            Start a new conversation with our AI assistant
           </p>
 
-          <div
+          <button
+            onClick={handleNewSession}
             style={{
               display: "flex",
-              flexDirection: "column",
-              gap: "12px",
-              width: "100%",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "10px",
+              padding: "14px 24px",
+              backgroundColor: "#6366f1",
+              color: "white",
+              border: "none",
+              borderRadius: "10px",
+              fontSize: "14px",
+              fontWeight: "600",
+              cursor: "pointer",
+              transition: "all 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "#4f46e5";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "#6366f1";
             }}
           >
-            {/* {hasExistingSession && (
-              <button
-                onClick={handleLoadSession}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "10px",
-                  padding: "14px 24px",
-                  backgroundColor: "#6366f1",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "10px",
-                  fontSize: "14px",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                  transition: "background-color 0.2s",
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.backgroundColor = "#4f46e5")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.backgroundColor = "#6366f1")
-                }
-              >
-                <RefreshCw size={16} />
-                Continue Previous Session
-              </button>
-            )}*/}
-
-            <button
-              onClick={handleNewSession}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "10px",
-                padding: "14px 24px",
-                backgroundColor: "white",
-                color: "#6366f1",
-                border: "2px solid #6366f1",
-                borderRadius: "10px",
-                fontSize: "14px",
-                fontWeight: "600",
-                cursor: "pointer",
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "#f0f2f5";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "white";
-              }}
-            >
-              <Plus size={16} />
-              Start New Conversation
-            </button>
-          </div>
+            <Plus size={16} />
+            Start Conversation
+          </button>
         </div>
       )}
 
@@ -591,6 +610,48 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           </div>
         ))}
 
+        {/* Follow-up Suggestions */}
+        {followUpSuggestions.length > 0 && !isTyping && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              marginTop: "8px",
+              marginLeft: "36px",
+            }}
+          >
+            {followUpSuggestions.map((suggestion, idx) => (
+              <button
+                key={idx}
+                onClick={() => handleSuggestionClick(suggestion.text)}
+                style={{
+                  padding: "8px 12px",
+                  backgroundColor: "white",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "12px",
+                  fontSize: "13px",
+                  color: "#6366f1",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  transition: "all 0.2s",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "#f9fafb";
+                  e.currentTarget.style.borderColor = "#6366f1";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "white";
+                  e.currentTarget.style.borderColor = "#e5e7eb";
+                }}
+              >
+                💬 {suggestion.text}
+              </button>
+            ))}
+          </div>
+        )}
+
         {isTyping && (
           <div style={{ display: "flex", gap: "8px" }}>
             <div
@@ -672,7 +733,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
             rows="1"
           />
           <button
-            onClick={handleSend}
+            onClick={() => handleSend()}
             disabled={!input.trim() || isTyping}
             style={{
               display: "flex",
