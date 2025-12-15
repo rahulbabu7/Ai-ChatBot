@@ -12,7 +12,7 @@ from backend.config import settings
 from groq import Groq
 from sentence_transformers import SentenceTransformer
 from chromadb import PersistentClient
-
+from form_system import FormCollector, FormTemplate, FormStatus
 # ──────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ──────────────────────────────────────────────────────────────────────────────
@@ -77,14 +77,14 @@ def _get_chroma() -> PersistentClient:
 
 class ConversationalIntelligence:
     """Analyzes queries and determines when to ask clarifying questions."""
-    
+
     AMBIGUITY_PATTERNS = {
         'vague_pronouns': ['it', 'this', 'that', 'those', 'these', 'they'],
         'incomplete_questions': ['what about', 'tell me about', 'how about'],
         'multiple_topics': ['and', 'or', 'also'],
         'unclear_intent': ['information', 'details', 'stuff', 'things'],
     }
-    
+
     CLARIFICATION_STRATEGIES = {
         'pricing': {
             'questions': [
@@ -115,102 +115,102 @@ class ConversationalIntelligence:
             'keywords': ['how', 'apply', 'register', 'process', 'step']
         },
     }
-    
+
     @staticmethod
     def analyze_query_completeness(query: str) -> Dict[str, Any]:
         """Analyze if query needs clarification."""
         query_lower = query.lower()
         words = query_lower.split()
-        
+
         analysis = {
             'is_complete': True,
             'issues': [],
             'suggested_clarifications': [],
             'confidence': 1.0
         }
-        
+
         if len(words) < 3:
             analysis['is_complete'] = False
             analysis['issues'].append('too_short')
             analysis['confidence'] *= 0.6
-        
+
         vague_pronouns = [w for w in words if w in ConversationalIntelligence.AMBIGUITY_PATTERNS['vague_pronouns']]
         if vague_pronouns and len(words) < 8:
             analysis['is_complete'] = False
             analysis['issues'].append('vague_reference')
             analysis['confidence'] *= 0.7
-        
+
         for pattern in ConversationalIntelligence.AMBIGUITY_PATTERNS['incomplete_questions']:
             if pattern in query_lower:
                 analysis['is_complete'] = False
                 analysis['issues'].append('incomplete_question')
                 analysis['confidence'] *= 0.5
                 break
-        
+
         for topic, data in ConversationalIntelligence.CLARIFICATION_STRATEGIES.items():
             if any(kw in query_lower for kw in data['keywords']):
                 if len(words) < 6 or any(issue in analysis['issues'] for issue in ['too_short', 'vague_reference']):
                     analysis['suggested_clarifications'].extend(data['questions'][:1])
-        
+
         return analysis
-    
+
     @staticmethod
     def detect_follow_up_opportunity(query: str, answer: str, documents: List[Dict[str, Any]]) -> Optional[str]:
         """Detect if we should suggest a follow-up question."""
         query_lower = query.lower()
         answer_lower = answer.lower()
-        
+
         # Don't suggest follow-ups if user is taking action
         action_keywords = ['book', 'schedule', 'register', 'sign up', 'demo', 'appointment', 'buy', 'purchase']
         if any(keyword in query_lower for keyword in action_keywords):
             return None
-        
+
         if 'option' in answer_lower or 'either' in answer_lower:
             return "Would you like more details about any specific option?"
-        
+
         if any(word in answer_lower for word in ['various', 'different', 'multiple', 'several']):
             return "Would you like me to explain any of these in more detail?"
-        
+
         if any(word in answer_lower for word in ['require', 'need to', 'must', 'step']):
             return "Would you like me to walk you through these in detail?"
-        
+
         return None
-    
+
     @staticmethod
     def generate_probing_questions(query: str, context: str, intent: str) -> List[str]:
         """Generate smart, context-aware probing questions."""
         questions = []
         context_lower = context.lower()
         query_lower = query.lower()
-        
+
         # Don't suggest if user is taking action
         action_keywords = ['book', 'schedule', 'register', 'sign up', 'demo', 'appointment', 'buy', 'purchase', 'contact', 'call', 'email']
         if any(keyword in query_lower for keyword in action_keywords):
             return []
-        
+
         # Don't suggest info that was just discussed
         recent_topics = ['hour', 'schedule', 'location', 'address', 'contact', 'price', 'cost', 'phone', 'email']
         if any(topic in query_lower for topic in recent_topics):
             return []
-        
+
         # Check available context
         has_pricing = any(word in context_lower for word in ['price', 'cost', '$', 'fee', 'payment'])
         has_timing = any(word in context_lower for word in ['hour', 'schedule', 'monday', 'tuesday'])
         has_location = any(word in context_lower for word in ['address', 'location', 'street', 'building'])
-        
+
         # Only suggest if contextually relevant
         if has_pricing and intent not in ['pricing', 'contact', 'timing'] and 'pricing' not in query_lower:
             if any(word in query_lower for word in ['service', 'product', 'offer', 'what', 'about', 'feature']):
                 questions.append("Would you like to know about pricing?")
-        
+
         if has_timing and intent != 'timing' and 'hour' not in query_lower:
             if any(word in query_lower for word in ['visit', 'come', 'available', 'when']):
                 questions.append("Would you like to know about our hours?")
-        
+
         if has_location and intent not in ['contact', 'location'] and 'location' not in query_lower:
             if any(word in query_lower for word in ['visit', 'come', 'see', 'where']):
                 questions.append("Need our location information?")
-        
+
         return questions[:1]  # Max 1 suggestion
 
 
@@ -355,6 +355,8 @@ class InteractiveRAGChatbot:
         self.conversation_history = []
         self.conversational_ai = ConversationalIntelligence()
         self.client_metadata = self._load_client_metadata()
+        self.active_form: Optional[FormCollector] = None
+        self.form_templates = self._load_form_templates()
 
     def _load_client_metadata(self) -> Dict[str, Any]:
         metadata_path = os.path.join(CLIENT_DATA_DIR, self.client_id, "metadata.json")
@@ -365,7 +367,14 @@ class InteractiveRAGChatbot:
             except:
                 pass
         return {"domain": "general", "business_type": "organization", "tone": "professional and helpful"}
-
+        
+    def _load_form_templates(self) -> Dict[str, Any]:
+        """Load form templates for this client"""
+        return {
+            'demo_booking': FormTemplate.get_demo_booking_form(),
+            'contact': FormTemplate.get_contact_form(),
+        }
+    
     def _build_context_string(self, documents: List[Dict[str, Any]], max_tokens: int = 3000) -> str:
         context_parts = []
         total_chars = 0
@@ -393,12 +402,12 @@ class InteractiveRAGChatbot:
     def _create_interactive_prompt(self, query: str, context: str, intent: str, is_clarification_needed: bool = False) -> str:
         tone = self.client_metadata.get("tone", "professional and helpful")
         business_type = self.client_metadata.get("business_type", "organization")
-        
+
         interactive_instruction = """
 6. Be conversational and natural - suggest related questions if relevant.
 7. If the question is vague, briefly answer what you can then ask for clarification.""" if is_clarification_needed else """
 6. Be conversational and helpful in your responses."""
-        
+
         return f"""You are an intelligent assistant for a {business_type}. Provide accurate information AND engage naturally with users.
 
 CONTEXT:
@@ -419,17 +428,23 @@ ANSWER:"""
     def chat(self, query: str, include_history: bool = True, max_history: int = 3, enable_clarifications: bool = True) -> Dict[str, Any]:
         if not query or not query.strip():
             return {"answer": "I'm here to help! What would you like to know?", "confidence": "none", "sources": [], "type": "prompt", "probing_questions": []}
+
+        if self.active_form and self.active_form.status == FormStatus.IN_PROGRESS:
+                return self._handle_form_response(query)
         
+        form_type = self._detect_form_intent(query)
+        if form_type:
+            return self._initiate_form(form_type)
         start_time = datetime.now()
         needs_clarification = False
         clarification_questions = []
-        
+
         if enable_clarifications:
             completeness = self.conversational_ai.analyze_query_completeness(query)
             if not completeness['is_complete'] and completeness['confidence'] < 0.7:
                 needs_clarification = True
                 clarification_questions = completeness['suggested_clarifications']
-        
+
         # Check custom Q&A
         custom_match = self.retriever.match_custom_qa(query)
         if custom_match and custom_match['confidence'] == 'high':
@@ -446,11 +461,11 @@ ANSWER:"""
             }
             self._update_history(query, response['answer'])
             return response
-        
+
         # Retrieve documents
         intent = self.retriever.query_processor.detect_intent(query)
         documents = self.retriever.retrieve_documents(query, top_k=12)
-        
+
         if not documents:
             return {
                 "answer": "I couldn't find specific information about that. Could you rephrase or provide more details?",
@@ -461,16 +476,16 @@ ANSWER:"""
                 "probing_questions": [],
                 "processing_time": (datetime.now() - start_time).total_seconds()
             }
-        
+
         # Build context
         context = self._build_context_string(documents)
         if include_history and self.conversation_history:
             history_context = self._format_history(max_history)
             context = f"{history_context}\n\n---\n\nCURRENT CONTEXT:\n{context}"
-        
+
         # Generate probing questions
         probing_questions = self.conversational_ai.generate_probing_questions(query, context, intent)
-        
+
         # Generate response
         prompt = self._create_interactive_prompt(query, context, intent, needs_clarification)
         try:
@@ -494,10 +509,10 @@ ANSWER:"""
                 "clarification_questions": [],
                 "processing_time": (datetime.now() - start_time).total_seconds()
             }
-        
+
         confidence = self._estimate_confidence(documents, answer)
         follow_up = self.conversational_ai.detect_follow_up_opportunity(query, answer, documents)
-        
+
         sources = []
         for doc in documents[:5]:
             meta = doc['metadata']
@@ -509,7 +524,7 @@ ANSWER:"""
             elif meta.get('source') == 'qa':
                 source_info.update({"type": "qa", "title": "Custom Q&A"})
             sources.append(source_info)
-        
+
         response = {
             "answer": answer,
             "confidence": confidence,
@@ -521,7 +536,7 @@ ANSWER:"""
             "probing_questions": probing_questions,
             "metadata": {"intent": intent, "num_documents": len(documents)}
         }
-        
+
         self._update_history(query, answer)
         return response
 
@@ -575,7 +590,114 @@ ANSWER:"""
             "last_interaction": self.conversation_history[-1]['timestamp']
         }
 
-
+    def _detect_form_intent(self, query: str) -> Optional[str]:
+        """Detect if user wants to start a form"""
+        query_lower = query.lower()
+        
+        intent_patterns = {
+            'demo_booking': [
+                'book demo', 'schedule demo', 'request demo',
+                'want a demo', 'show me demo', 'demo please',
+                'book a call', 'schedule call', 'request a demo',
+                'sign up for demo', 'get a demo'
+            ],
+            'contact': [
+                'contact you', 'get in touch', 'reach out',
+                'talk to someone', 'speak to team', 'contact us',
+                'email you', 'call you', 'message you'
+            ],
+        }
+        
+        for form_type, keywords in intent_patterns.items():
+            if any(kw in query_lower for kw in keywords):
+                return form_type
+        
+        return None
+    
+    def _initiate_form(self, form_type: str) -> Dict[str, Any]:
+        """Start form collection"""
+        if form_type not in self.form_templates:
+            return {
+                "answer": "I'd be happy to help! Could you clarify what you need?",
+                "confidence": "low",
+                "type": "error",
+                "form_active": False
+            }
+        
+        template = self.form_templates[form_type]
+        self.active_form = FormCollector(template)
+        initial_prompt = self.active_form.start()
+        
+        self._update_history(
+            query=f"[Form Started: {form_type}]",
+            answer=initial_prompt
+        )
+        
+        return {
+            "answer": f"Great! I'll help you with that. Let me collect some information.\n\n{initial_prompt}",
+            "confidence": "high",
+            "type": "form_initiated",
+            "form_type": form_type,
+            "form_active": True,
+            "progress": f"0/{len(template.fields)}",
+            "sources": [],
+            "probing_questions": []
+        }
+    
+    def _handle_form_response(self, user_input: str) -> Dict[str, Any]:
+        """Process form field response"""
+        result = self.active_form.process_response(user_input)
+        
+        response = {
+            "answer": result["message"],
+            "confidence": "high",
+            "type": f"form_{result['status']}",
+            "form_active": not result.get("form_complete", False),
+            "sources": []
+        }
+        
+        if result.get("progress"):
+            response["progress"] = result["progress"]
+        
+        if result.get("form_complete"):
+            self._save_form_submission(result)
+            self._update_history(
+                query="[Form Completed]",
+                answer=result["message"]
+            )
+            self.active_form = None
+            response["probing_questions"] = ["Is there anything else you'd like to know?"]
+        else:
+            self._update_history(
+                query=user_input,
+                answer=result["message"]
+            )
+        
+        return response
+    
+    def _save_form_submission(self, result: Dict[str, Any]):
+        """Save completed form data"""
+        submission = {
+            "client_id": self.client_id,
+            "form_type": result["form_type"],
+            "data": result["collected_data"],
+            "timestamp": datetime.now().isoformat(),
+            "conversation_context": self.conversation_history[-3:] if self.conversation_history else []
+        }
+        
+        # Save to file
+        submissions_dir = os.path.join(CLIENT_DATA_DIR, self.client_id, "form_submissions")
+        os.makedirs(submissions_dir, exist_ok=True)
+        
+        filename = f"{result['form_type']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filepath = os.path.join(submissions_dir, filename)
+        
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(submission, f, indent=2)
+            print(f"✅ Form submission saved: {filepath}")
+        except Exception as e:
+            print(f"⚠️ Error saving form submission: {e}")
 # ──────────────────────────────────────────────────────────────────────────────
 # Public API & Session Management
 # ──────────────────────────────────────────────────────────────────────────────
@@ -595,6 +717,8 @@ def chat_with_model(client_id: str, query: str, session_id: Optional[str] = None
     chatbot, session_id = _get_or_create_session(client_id, session_id)
     response = chatbot.chat(query, include_history=include_history, enable_clarifications=enable_clarifications)
     response['session_id'] = session_id
+    if chatbot.active_form:
+        response['form_status'] = chatbot.active_form.status.value
     return response
 
 
@@ -653,14 +777,14 @@ def cleanup_old_sessions(max_age_hours: int = 24) -> Dict[str, Any]:
                     chatbot.conversation_history[-1]['timestamp']
                 )
                 age_hours = (current_time - last_interaction).total_seconds() / 3600
-                
+
                 if age_hours > max_age_hours:
                     sessions_to_remove.append(session_key)
-        
+
         for session_key in sessions_to_remove:
             del _chatbot_sessions[session_key]
             removed_count += 1
-    
+
     return {
         "status": "success",
         "removed_sessions": removed_count,
@@ -678,7 +802,7 @@ def explain_context(client_id: str, query: str) -> Dict[str, Any]:
     """
     retriever = HybridRetriever(client_id)
     conv_ai = ConversationalIntelligence()
-    
+
     documents = retriever.retrieve_documents(query)
     intent = retriever.query_processor.detect_intent(query)
     completeness = conv_ai.analyze_query_completeness(query)
