@@ -14,6 +14,7 @@ const Duration = Loadable(lazy(() => import('views/reporting/Duration')));
 const MissedChats = Loadable(lazy(() => import('views/reporting/MissedChats')));
 const ChatVolume = Loadable(lazy(() => import('views/reporting/ChatVolume')));
 const FirstResponseTime = Loadable(lazy(() => import('views/reporting/FirstResponseTime')));
+const UserSatisfaction = Loadable(lazy(() => import('views/reporting/UserSatisfaction')));
 
 const PagesRoutes = {
   path: '/',
@@ -38,7 +39,8 @@ const PagesRoutes = {
         { path: 'duration', element: <Duration /> },
         { path: 'missed-chats', element: <MissedChats /> },
         { path: 'chat-volume', element: <ChatVolume /> },
-        { path: 'first-response-time', element: <FirstResponseTime /> }
+        { path: 'first-response-time', element: <FirstResponseTime /> },
+        { path: 'user-satisfaction', element: <UserSatisfaction /> }
       ]
     }
   ]
