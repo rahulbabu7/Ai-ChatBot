@@ -281,6 +281,8 @@ async def heartbeat(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error recording heartbeat: {str(e)}")
 
+session_durations: Dict[str, Dict] = {}
+session_duration_lock = threading.Lock()
 
 @router.post("/heartbeat/{client_id}")
 async def chatbot_heartbeat(
@@ -305,19 +307,42 @@ async def chatbot_heartbeat(
 
         # Create unique key for this user
         user_key = f"{client_id}:{req.session_id}"
+        now = datetime.now()
 
         with active_users_lock:
             if req.is_chatbot_open:
-                # User has chatbot open - update/add to active users
+                # User has chatbot open
+                if user_key not in active_users:
+                    # New session - record start time
+                    session_durations[user_key] = {
+                        "start_time": now,
+                        "last_seen": now,
+                        "total_duration": 0  # in seconds
+                    }
+                else:
+                    # Update existing session
+                    if user_key in session_durations:
+                        last_seen = session_durations[user_key]["last_seen"]
+                        session_durations[user_key]["total_duration"] += (now - last_seen).total_seconds()
+                        session_durations[user_key]["last_seen"] = now
+
                 active_users[user_key] = {
                     "client_id": client_id,
                     "session_id": req.session_id,
-                    "last_seen": datetime.now(),
+                    "last_seen": now,
                     "ip": request.client.host if request.client else "unknown",
                     "user_agent": request.headers.get("user-agent", "unknown")
                 }
             else:
-                # User closed chatbot - remove from active users
+                # User closed chatbot - calculate final duration
+                if user_key in session_durations:
+                    last_seen = session_durations[user_key]["last_seen"]
+                    session_durations[user_key]["total_duration"] += (now - last_seen).total_seconds()
+
+                    # Store final duration in database (add a new field to Chat model or create SessionDuration table)
+                    print(f"📊 Session {req.session_id} duration: {session_durations[user_key]['total_duration']} seconds")
+
+                # Remove from active users
                 if user_key in active_users:
                     del active_users[user_key]
 
@@ -327,6 +352,38 @@ async def chatbot_heartbeat(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error recording heartbeat: {str(e)}")
 
+
+@router.get("/session-duration/{session_id}")
+async def get_session_duration(
+    session_id: str,
+    client_id: str = Depends(get_client_from_header)
+):
+    """Get duration for a specific session"""
+    user_key = f"{client_id}:{session_id}"
+
+    with active_users_lock:
+        if user_key in session_durations:
+            duration_data = session_durations[user_key]
+            total_duration = duration_data["total_duration"]
+
+            # If still active, add current time
+            if user_key in active_users:
+                now = datetime.now()
+                total_duration += (now - duration_data["last_seen"]).total_seconds()
+
+            return {
+                "session_id": session_id,
+                "duration_seconds": round(total_duration, 2),
+                "duration_minutes": round(total_duration / 60, 2),
+                "is_active": user_key in active_users
+            }
+
+    return {
+        "session_id": session_id,
+        "duration_seconds": 0,
+        "duration_minutes": 0,
+        "is_active": False
+    }
 
 @router.get("/active-users/me")
 async def get_active_users(

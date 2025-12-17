@@ -310,19 +310,27 @@ export default function DefaultPage() {
                     const secondsAgo = Math.floor((now - lastSeenDate) / 1000);
 
                     return (
-                      <ListGroup.Item 
-                        key={idx} 
+                      <ListGroup.Item
+                        key={idx}
                         className="d-flex justify-content-between align-items-start"
                         action
-                        onClick={() => navigate(`/client-chat/${user.session_id}`)}
+                        onClick={() => {
+                          console.log('🔍 Navigating to session:', user.session_id);
+                          console.log('🔍 Full session ID length:', user.session_id.length);
+                          // FIX: Use FULL session_id, not truncated
+                          navigate(`/client-chat/${user.session_id}`);
+                        }}
                         style={{ cursor: 'pointer' }}
                       >
                         <div className="flex-grow-1">
                           <div className="d-flex align-items-center mb-1">
                             <span className="badge bg-success me-2">●</span>
                             <strong>Session:</strong>
+                            {/* Display truncated but NAVIGATE with full ID */}
                             <code className="ms-2 small">{user.session_id.substring(0, 30)}...</code>
-                            <Badge bg="primary" className="ms-2">Click to Chat</Badge>
+                            <Badge bg="primary" className="ms-2">
+                              Click to Chat
+                            </Badge>
                           </div>
                           <div className="small text-muted">
                             <div>📍 IP: {user.ip}</div>
@@ -352,8 +360,8 @@ export default function DefaultPage() {
               <h5 className="mb-0">Daily Analytics (Last 7 Days)</h5>
               {!statsLoading && dailyStats.length > 0 && (
                 <small className="text-muted">
-                  Total: {dailyStats.reduce((sum, s) => sum + s.visitors, 0)} visitors,{' '}
-                  {dailyStats.reduce((sum, s) => sum + s.chats, 0)} chats
+                  Total: {dailyStats.reduce((sum, s) => sum + s.visitors, 0)} visitors, {dailyStats.reduce((sum, s) => sum + s.chats, 0)}{' '}
+                  chats
                 </small>
               )}
             </Card.Header>
@@ -402,7 +410,7 @@ export default function DefaultPage() {
                         <span className="text-truncate">{s.substring(0, 25)}...</span>
                         {selectedSession === s && <Badge bg="primary">Viewing</Badge>}
                       </ListGroup.Item>
-                      
+
                       {/* {selectedSession === s && (
                         <Button
                           variant="success"
@@ -426,9 +434,7 @@ export default function DefaultPage() {
         <Col md={8} xl={9}>
           <Card className="shadow-sm h-100">
             <Card.Header className="d-flex justify-content-between align-items-center">
-              <h5 className="mb-0">
-                {selectedSession ? `Chat: ${selectedSession.substring(0, 30)}...` : 'Select a session'}
-              </h5>
+              <h5 className="mb-0">{selectedSession ? `Chat: ${selectedSession.substring(0, 30)}...` : 'Select a session'}</h5>
               {/* {selectedSession && (
                 <Button
                   variant="success"
