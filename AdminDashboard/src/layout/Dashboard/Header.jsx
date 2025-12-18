@@ -203,6 +203,11 @@ export default function Header() {
     setSuccess('');
   };
 
+  // Navigation handlers for settings sub-buttons
+  const navigateToPage = (path) => {
+    navigate(path);
+  };
+
   return (
     <>
       <header className="pc-header">
@@ -216,11 +221,39 @@ export default function Header() {
           </Nav>
 
           <Nav className="list-unstyled d-flex align-items-center ms-auto">
+            {/* Settings Dropdown */}
+            <Dropdown align="end" className="me-3">
+              <Dropdown.Toggle variant="link" id="settings-dropdown" className="pc-head-link">
+                <i className="ph ph-gear" style={{ fontSize: '1.2rem' }} />
+              </Dropdown.Toggle>
+
+              <Dropdown.Menu className="pc-h-dropdown">
+                <Dropdown.Header className="fw-bold">Settings</Dropdown.Header>
+                <Dropdown.Item as="button" onClick={() => navigateToPage('/settings/profile')}>
+                  <i className="ph ph-user me-2" /> Profile Settings
+                </Dropdown.Item>
+                <Dropdown.Item as="button" onClick={() => navigateToPage('/settings/shortcuts')}>
+                  <i className="ph ph-keyboard me-2" /> Shortcuts
+                </Dropdown.Item>
+
+                <Dropdown.Item as="button" disabled>
+                  <i className="ph ph-bell me-2" /> Notifications
+                </Dropdown.Item>
+                
+                <Dropdown.Divider />
+                <Dropdown.Item as="button" disabled>
+                  <i className="ph ph-gear-six me-2" /> Advanced Settings
+                </Dropdown.Item>
+                
+              </Dropdown.Menu>
+            </Dropdown>
+
+            {/* User Profile Dropdown */}
             <Dropdown align="end">
               <Dropdown.Toggle className="pc-head-link p-0 border-0 bg-transparent" variant="link" id="user-dropdown">
                 <Image src={Img2} alt="user-avatar" style={{ width: '35px', height: '35px', cursor: 'pointer' }} roundedCircle />
               </Dropdown.Toggle>
-
+              
               <Dropdown.Menu className="dropdown-user-profile pc-h-dropdown p-0 overflow-hidden">
                 <Dropdown.Header className="bg-primary">
                   <Stack direction="horizontal" gap={2} className="my-2 align-items-center">
@@ -233,9 +266,6 @@ export default function Header() {
                 </Dropdown.Header>
 
                 <div className="dropdown-body p-2">
-                  <Dropdown.Item as={Link} to="#" className="justify-content-start">
-                    <i className="ph ph-gear me-2" /> Settings
-                  </Dropdown.Item>
                   <Dropdown.Item as="button" className="justify-content-start" onClick={handleShare}>
                     <i className="ph ph-share-network me-2" /> Share
                   </Dropdown.Item>
@@ -251,7 +281,7 @@ export default function Header() {
             </Dropdown>
           </Nav>
         </div>
-      </header>
+      </header>  
 
       {/* Share Modal */}
       <Modal show={showShareModal} onHide={() => setShowShareModal(false)} centered>
