@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException,Header,Request,Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, distinct
+from sqlalchemy import func, distinct,case
 from sqlmodel import select
 from pydantic import BaseModel
 from typing import Dict
@@ -45,6 +45,16 @@ class ResponseTimeStats(BaseModel):
     fast_responses: int     # 1-2 seconds
     slow_responses: int     # > 2 seconds
     total_responses: int
+
+class SessionStatsResponse(BaseModel):
+    """Session statistics for a date range"""
+    total_sessions: int
+    avg_duration_minutes: float
+    min_duration_minutes: float
+    max_duration_minutes: float
+    total_messages: int
+    avg_messages_per_session: float
+    avg_response_time: float
 
 
 @router.get("/stats/daily", response_model=StatsResponse)
@@ -281,6 +291,8 @@ async def heartbeat(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error recording heartbeat: {str(e)}")
 
+session_durations: Dict[str, Dict] = {}
+session_duration_lock = threading.Lock()
 
 @router.post("/heartbeat/{client_id}")
 async def chatbot_heartbeat(
@@ -305,19 +317,42 @@ async def chatbot_heartbeat(
 
         # Create unique key for this user
         user_key = f"{client_id}:{req.session_id}"
+        now = datetime.now()
 
         with active_users_lock:
             if req.is_chatbot_open:
-                # User has chatbot open - update/add to active users
+                # User has chatbot open
+                if user_key not in active_users:
+                    # New session - record start time
+                    session_durations[user_key] = {
+                        "start_time": now,
+                        "last_seen": now,
+                        "total_duration": 0  # in seconds
+                    }
+                else:
+                    # Update existing session
+                    if user_key in session_durations:
+                        last_seen = session_durations[user_key]["last_seen"]
+                        session_durations[user_key]["total_duration"] += (now - last_seen).total_seconds()
+                        session_durations[user_key]["last_seen"] = now
+
                 active_users[user_key] = {
                     "client_id": client_id,
                     "session_id": req.session_id,
-                    "last_seen": datetime.now(),
+                    "last_seen": now,
                     "ip": request.client.host if request.client else "unknown",
                     "user_agent": request.headers.get("user-agent", "unknown")
                 }
             else:
-                # User closed chatbot - remove from active users
+                # User closed chatbot - calculate final duration
+                if user_key in session_durations:
+                    last_seen = session_durations[user_key]["last_seen"]
+                    session_durations[user_key]["total_duration"] += (now - last_seen).total_seconds()
+
+                    # Store final duration in database (add a new field to Chat model or create SessionDuration table)
+                    print(f"📊 Session {req.session_id} duration: {session_durations[user_key]['total_duration']} seconds")
+
+                # Remove from active users
                 if user_key in active_users:
                     del active_users[user_key]
 
@@ -327,6 +362,38 @@ async def chatbot_heartbeat(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error recording heartbeat: {str(e)}")
 
+
+@router.get("/session-duration/{session_id}")
+async def get_session_duration(
+    session_id: str,
+    client_id: str = Depends(get_client_from_header)
+):
+    """Get duration for a specific session"""
+    user_key = f"{client_id}:{session_id}"
+
+    with active_users_lock:
+        if user_key in session_durations:
+            duration_data = session_durations[user_key]
+            total_duration = duration_data["total_duration"]
+
+            # If still active, add current time
+            if user_key in active_users:
+                now = datetime.now()
+                total_duration += (now - duration_data["last_seen"]).total_seconds()
+
+            return {
+                "session_id": session_id,
+                "duration_seconds": round(total_duration, 2),
+                "duration_minutes": round(total_duration / 60, 2),
+                "is_active": user_key in active_users
+            }
+
+    return {
+        "session_id": session_id,
+        "duration_seconds": 0,
+        "duration_minutes": 0,
+        "is_active": False
+    }
 
 @router.get("/active-users/me")
 async def get_active_users(
@@ -368,6 +435,114 @@ async def get_active_users(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching active users: {str(e)}")
 
+@router.get("/stats/sessions", response_model=SessionStatsResponse)
+async def get_session_stats(
+    client_id: str = Depends(get_client_from_header),
+    session: AsyncSession = Depends(get_session),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)")
+):
+    """Get aggregated session statistics for a date range"""
+    try:
+        # Parse dates or use defaults (last 7 days)
+        if start_date and end_date:
+            try:
+                start = datetime.strptime(start_date, '%Y-%m-%d')
+                end = datetime.strptime(end_date, '%Y-%m-%d')
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+        else:
+            end = datetime.now()
+            start = end - timedelta(days=6)
+
+        # Set end date to end of day
+        end = end.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        print(f"📊 Fetching session stats from {start.date()} to {end.date()}")
+
+        # Get all sessions in date range with their first/last message times
+        stmt = (
+            select(
+                Chat.session_id,
+                func.min(Chat.created_at).label('session_start'),
+                func.max(Chat.created_at).label('session_end'),
+                func.count(Chat.id).label('message_count'),
+                func.avg(
+                    case(
+                        (Chat.role == 'assistant', Chat.response_time),
+                        else_=None
+                    )
+                ).label('avg_response_time')
+            )
+            .where(
+                Chat.client_id == client_id,
+                Chat.created_at >= start,
+                Chat.created_at <= end,
+                Chat.is_active == 1
+            )
+            .group_by(Chat.session_id)
+        )
+
+        result = await session.execute(stmt)
+        sessions = result.all()
+
+        if not sessions or len(sessions) == 0:
+            return {
+                "total_sessions": 0,
+                "avg_duration_minutes": 0.0,
+                "min_duration_minutes": 0.0,
+                "max_duration_minutes": 0.0,
+                "total_messages": 0,
+                "avg_messages_per_session": 0.0,
+                "avg_response_time": 0.0
+            }
+
+        # Calculate durations for each session
+        durations = []
+        total_messages = 0
+        response_times = []
+
+        for sess in sessions:
+            # Calculate duration in minutes
+            if sess.session_start and sess.session_end:
+                duration_seconds = (sess.session_end - sess.session_start).total_seconds()
+                duration_minutes = max(0, duration_seconds / 60)
+                durations.append(duration_minutes)
+
+            # Track total messages
+            total_messages += sess.message_count or 0
+
+            # Track response times
+            if sess.avg_response_time:
+                response_times.append(sess.avg_response_time)
+
+        # Calculate aggregated stats
+        total_sessions = len(sessions)
+        avg_duration = sum(durations) / len(durations) if durations else 0.0
+        min_duration = min(durations) if durations else 0.0
+        max_duration = max(durations) if durations else 0.0
+        avg_messages = total_messages / total_sessions if total_sessions > 0 else 0.0
+        avg_response = sum(response_times) / len(response_times) if response_times else 0.0
+
+        print(f"✅ Session stats: {total_sessions} sessions, {total_messages} messages, {round(avg_duration, 1)} min avg")
+
+        return {
+            "total_sessions": total_sessions,
+            "avg_duration_minutes": round(avg_duration, 2),
+            "min_duration_minutes": round(min_duration, 2),
+            "max_duration_minutes": round(max_duration, 2),
+            "total_messages": total_messages,
+            "avg_messages_per_session": round(avg_messages, 1),
+            "avg_response_time": round(avg_response, 2)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error fetching session stats: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error fetching session stats: {str(e)}")
 
 # Background cleanup task
 def cleanup_stale_users():

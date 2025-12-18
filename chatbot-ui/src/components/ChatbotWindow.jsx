@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Send, X, User, Bot, UserCheck, RefreshCw, Plus } from "lucide-react";
 
-import { API_URL } from "../config";
+const API_URL = "http://localhost:8000"; // Update with your API URL
 
 const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
   const [messages, setMessages] = useState([]);
@@ -9,40 +9,30 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
   const [isTyping, setIsTyping] = useState(false);
   const [showSessionPrompt, setShowSessionPrompt] = useState(true);
   const [currentSessionId, setCurrentSessionId] = useState(null);
-  const [hasExistingSession, setHasExistingSession] = useState(false);
   const [followUpSuggestions, setFollowUpSuggestions] = useState([]);
+  const [lastMessageId, setLastMessageId] = useState(null);
   const messagesEndRef = useRef(null);
+  const pollingRef = useRef(null);
 
-  // Check for existing session on mount
+  // 🔥 FIX: Use session ID passed from parent (already created in Chatbot.jsx)
   useEffect(() => {
-    const storageKey = `chatbot_session_${clientId}`;
-    const savedData = localStorage.getItem(storageKey);
+    console.log("📍 ChatbotWindow mounted with:", {
+      clientId,
+      sessionId,
+      hasSessionId: !!sessionId
+    });
 
-    if (savedData) {
-      try {
-        const parsed = JSON.parse(savedData);
-        const sessionAge = Date.now() - parsed.timestamp;
-        const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-
-        if (sessionAge > SEVEN_DAYS) {
-          localStorage.removeItem(storageKey);
-          setHasExistingSession(false);
-        } else {
-          setCurrentSessionId(parsed.sessionId);
-          setHasExistingSession(true);
-        }
-      } catch (e) {
-        setCurrentSessionId(savedData);
-        setHasExistingSession(true);
-      }
-    } else if (sessionId) {
-      const sessionData = {
-        sessionId: sessionId,
-        timestamp: Date.now(),
-      };
+    if (sessionId) {
+      // Use the session ID from parent component
       setCurrentSessionId(sessionId);
-      setHasExistingSession(true);
-      localStorage.setItem(storageKey, JSON.stringify(sessionData));
+      setShowSessionPrompt(false);
+      
+      // Load existing chat history
+      console.log("📚 Loading chat history for session:", sessionId);
+      loadHistory(sessionId);
+    } else {
+      console.warn("⚠️ No session ID provided to ChatbotWindow");
+      setShowSessionPrompt(true);
     }
   }, [clientId, sessionId]);
 
@@ -70,17 +60,23 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           (chat) => chat.is_active !== 0,
         );
 
-        setMessages(
-          activeMessages.map((chat) => ({
-            sender: chat.role === "user" ? "user" : "bot",
-            text: chat.message,
-            timestamp: new Date(chat.created_at).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            admin_override: chat.admin_override === 1,
-          })),
-        );
+        const formattedMessages = activeMessages.map((chat) => ({
+          id: chat.id,
+          sender: chat.role === "user" ? "user" : "bot",
+          text: chat.message,
+          timestamp: new Date(chat.created_at).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          admin_override: chat.admin_override === 1,
+        }));
+
+        setMessages(formattedMessages);
+        
+        // Track last message ID for efficient polling
+        if (formattedMessages.length > 0) {
+          setLastMessageId(formattedMessages[formattedMessages.length - 1].id);
+        }
       }
     } catch (err) {
       console.error("Failed to load history:", err);
@@ -93,6 +89,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
     setMessages([]);
     setFollowUpSuggestions([]);
     setShowSessionPrompt(false);
+    setLastMessageId(null);
 
     const storageKey = `chatbot_session_${clientId}`;
     const sessionData = {
@@ -100,12 +97,11 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       timestamp: Date.now(),
     };
     localStorage.setItem(storageKey, JSON.stringify(sessionData));
-    setHasExistingSession(true);
   };
 
-  // Poll for new messages
+  // 🔥 IMPROVED POLLING - Detects admin messages and deletions
   useEffect(() => {
-    if (showSessionPrompt) return;
+    if (showSessionPrompt || !currentSessionId) return;
 
     const pollMessages = async () => {
       try {
@@ -125,18 +121,36 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
             (chat) => chat.is_active !== 0,
           );
 
-          if (activeMessages.length !== messages.length) {
-            setMessages(
-              activeMessages.map((chat) => ({
-                sender: chat.role === "user" ? "user" : "bot",
-                text: chat.message,
-                timestamp: new Date(chat.created_at).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                }),
-                admin_override: chat.admin_override === 1,
-              })),
-            );
+          const formattedMessages = activeMessages.map((chat) => ({
+            id: chat.id,
+            sender: chat.role === "user" ? "user" : "bot",
+            text: chat.message,
+            timestamp: new Date(chat.created_at).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            admin_override: chat.admin_override === 1,
+          }));
+
+          // 🔥 KEY FIX: Always update if message count or last ID changed
+          const hasNewMessages = 
+            formattedMessages.length !== messages.length ||
+            (formattedMessages.length > 0 && 
+             formattedMessages[formattedMessages.length - 1].id !== lastMessageId);
+
+          if (hasNewMessages) {
+            console.log("📩 New messages detected, updating...");
+            setMessages(formattedMessages);
+            
+            if (formattedMessages.length > 0) {
+              setLastMessageId(formattedMessages[formattedMessages.length - 1].id);
+            }
+
+            // Clear typing indicator if we received a new bot message
+            const lastMsg = formattedMessages[formattedMessages.length - 1];
+            if (lastMsg && lastMsg.sender === "bot") {
+              setIsTyping(false);
+            }
           }
         }
       } catch (err) {
@@ -144,16 +158,24 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       }
     };
 
-    if (clientId && chatbotKey && currentSessionId) {
-      const interval = setInterval(pollMessages, 3000);
-      return () => clearInterval(interval);
-    }
+    // Poll immediately on mount
+    pollMessages();
+
+    // Then poll every 2 seconds
+    pollingRef.current = setInterval(pollMessages, 2000);
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
   }, [
     currentSessionId,
     chatbotKey,
     clientId,
-    messages.length,
     showSessionPrompt,
+    messages.length,
+    lastMessageId,
   ]);
 
   const handleSend = async (messageText = null) => {
@@ -165,15 +187,17 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       minute: "2-digit",
     });
     const newMessage = {
+      id: Date.now(), // Temporary ID
       sender: "user",
       text: textToSend,
       timestamp,
+      admin_override: false,
     };
 
     setMessages((prev) => [...prev, newMessage]);
     setInput("");
     setIsTyping(true);
-    setFollowUpSuggestions([]); // Clear suggestions when sending new message
+    setFollowUpSuggestions([]);
 
     try {
       const res = await fetch(`${API_URL}/client/chat/${clientId}`, {
@@ -183,7 +207,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           "X-Chatbot-Key": chatbotKey,
         },
         body: JSON.stringify({
-          session_id: currentSessionId, // ← CRITICAL: Maintains conversation context!
+          session_id: currentSessionId,
           message: textToSend,
         }),
       });
@@ -205,51 +229,38 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         localStorage.setItem(storageKey, JSON.stringify(sessionData));
       }
 
+      // The polling will handle adding the bot response
+      // But we can add it immediately for better UX
       setTimeout(() => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            sender: "bot",
-            text: data.reply,
-            timestamp: new Date().toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            admin_override: false,
-          },
-        ]);
+        const botMessage = {
+          id: Date.now() + 1,
+          sender: "bot",
+          text: data.reply,
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          admin_override: false,
+        };
 
-        // Extract interactive suggestions from response
+        setMessages((prev) => [...prev, botMessage]);
+
+        // Extract suggestions
         const suggestions = [];
-
-        // Add follow-up question if available
         if (data.follow_up_question) {
           suggestions.push({
             type: "follow_up",
             text: data.follow_up_question,
           });
         }
-
-        // Add clarification questions if available
-        if (
-          data.clarification_questions &&
-          data.clarification_questions.length > 0
-        ) {
+        if (data.clarification_questions?.length > 0) {
           data.clarification_questions.forEach((q) => {
-            suggestions.push({
-              type: "clarification",
-              text: q,
-            });
+            suggestions.push({ type: "clarification", text: q });
           });
         }
-
-        // Add probing questions if available
-        if (data.probing_questions && data.probing_questions.length > 0) {
+        if (data.probing_questions?.length > 0) {
           data.probing_questions.slice(0, 2).forEach((q) => {
-            suggestions.push({
-              type: "probing",
-              text: q,
-            });
+            suggestions.push({ type: "probing", text: q });
           });
         }
 
@@ -262,6 +273,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         setMessages((prev) => [
           ...prev,
           {
+            id: Date.now() + 1,
             sender: "bot",
             text: "⚠️ Error contacting backend.",
             timestamp: new Date().toLocaleTimeString([], {
@@ -277,13 +289,9 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
   };
 
   const handleSuggestionClick = (suggestionText) => {
-    // Extract the actual question from the suggestion
-    // Remove "Would you like..." prefix and convert to direct question
     let processedText = suggestionText;
 
-    // Handle different suggestion formats
     if (suggestionText.toLowerCase().startsWith("would you like")) {
-      // "Would you like to know about X?" -> "yes, tell me about X"
       processedText = suggestionText.replace(
         /would you like (to know about|to know|me to|about)/gi,
         "",
@@ -291,14 +299,12 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       processedText = processedText.replace(/\?$/g, "").trim();
       processedText = `yes, ${processedText}`;
     } else if (suggestionText.toLowerCase().startsWith("do you need")) {
-      // "Do you need X?" -> "yes, X"
       processedText = suggestionText
         .replace(/do you need/gi, "")
         .replace(/\?$/g, "")
         .trim();
       processedText = `yes, ${processedText}`;
     } else if (suggestionText.endsWith("?")) {
-      // For other questions, just use "yes" as it will be understood in context
       processedText = "yes";
     }
 
@@ -494,7 +500,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           pointerEvents: showSessionPrompt ? "none" : "auto",
         }}
       >
-        {messages.length === 0 && (
+        {messages.length === 0 && !showSessionPrompt && (
           <div
             style={{
               textAlign: "center",
@@ -509,7 +515,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
 
         {messages.map((msg, idx) => (
           <div
-            key={idx}
+            key={`${msg.id}-${idx}`}
             style={{
               display: "flex",
               alignItems: "flex-end",
@@ -531,6 +537,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                flexShrink: 0,
               }}
             >
               {msg.sender === "user" ? (
