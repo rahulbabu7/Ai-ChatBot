@@ -1,20 +1,45 @@
-import React, { useState } from 'react';
-import { Container, Row, Col, Card, Table, Button, Form, Modal, Alert } from 'react-bootstrap';
+import React, { useState, useEffect } from 'react';
+import { Container, Row, Col, Card, Table, Button, Form, Modal, Alert, Spinner } from 'react-bootstrap';
+import axios from 'axios';
+import { API_URL } from '../../config';
 
 const Shortcuts = () => {
-  // Start with an empty shortcuts array
-  const [shortcuts, setShortcuts] = useState([ 
-    { id: 1, key: 'Public', action: 'hello', description: 'Hello! How can I help you today?' },
-    { id: 2, key: 'Personal', action: 'thanks', description: 'Thank you for your message!' },
-  ]);
-
-  // State for selected shortcuts
+  const [shortcuts, setShortcuts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState([]);
   const [selectAll, setSelectAll] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newShortcut, setNewShortcut] = useState({ key: '', action: '', description: '' });
+  const [newShortcut, setNewShortcut] = useState({ action_type: '', command: '', message: '' });
   const [showDeleteSelectedAlert, setShowDeleteSelectedAlert] = useState(false);
   const [exportMessage, setExportMessage] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
+
+  // Fetch shortcuts from backend
+  const fetchShortcuts = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get(`${API_URL}/shortcuts/`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      setShortcuts(response.data);
+      setError('');
+    } catch (err) {
+      console.error('Failed to fetch shortcuts:', err);
+      setError('Failed to load shortcuts');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchShortcuts();
+  }, []);
 
   // Handle individual checkbox selection
   const handleCheckboxChange = (id) => {
@@ -36,31 +61,98 @@ const Shortcuts = () => {
   };
 
   // Add new shortcut
-  const handleAddShortcut = () => {
-    if (newShortcut.key && newShortcut.action) {
-      const newId = shortcuts.length > 0 ? Math.max(...shortcuts.map(s => s.id)) + 1 : 1;
-      setShortcuts([...shortcuts, { 
-        id: newId, 
-        ...newShortcut 
-      }]);
-      setNewShortcut({ key: '', action: '', description: '' });
+  const handleAddShortcut = async () => {
+    if (!newShortcut.action_type || !newShortcut.command || !newShortcut.message) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await axios.post(
+        `${API_URL}/shortcuts/`,
+        {
+          action_type: newShortcut.action_type,
+          command: newShortcut.command,
+          message: newShortcut.message
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      setNewShortcut({ action_type: '', command: '', message: '' });
       setShowAddModal(false);
+      setExportMessage(`✅ Shortcut /${newShortcut.command} created successfully`);
+      setTimeout(() => setExportMessage(''), 3000);
+
+      // Refresh list
+      await fetchShortcuts();
+    } catch (err) {
+      console.error('Failed to create shortcut:', err);
+      setError(err.response?.data?.detail || 'Failed to create shortcut');
+    } finally {
+      setSaving(false);
     }
   };
 
   // Delete single shortcut
-  const handleDeleteShortcut = (id) => {
-    setShortcuts(shortcuts.filter(shortcut => shortcut.id !== id));
-    // Remove from selected if it was selected
-    setSelectedIds(selectedIds.filter(selectedId => selectedId !== id));
+  const handleDeleteShortcut = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this shortcut?')) {
+      return;
+    }
+
+    try {
+      await axios.delete(`${API_URL}/shortcuts/${id}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      setExportMessage('✅ Shortcut deleted successfully');
+      setTimeout(() => setExportMessage(''), 3000);
+
+      // Refresh list
+      await fetchShortcuts();
+
+      // Remove from selected if it was selected
+      setSelectedIds(selectedIds.filter(selectedId => selectedId !== id));
+    } catch (err) {
+      console.error('Failed to delete shortcut:', err);
+      setError('Failed to delete shortcut');
+    }
   };
 
   // Delete selected shortcuts
-  const handleDeleteSelected = () => {
-    setShortcuts(shortcuts.filter(shortcut => !selectedIds.includes(shortcut.id)));
-    setSelectedIds([]);
-    setSelectAll(false);
-    setShowDeleteSelectedAlert(false);
+  const handleDeleteSelected = async () => {
+    try {
+      await axios.post(
+        `${API_URL}/shortcuts/bulk-delete`,
+        selectedIds,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      setExportMessage(`✅ Deleted ${selectedIds.length} shortcuts successfully`);
+      setTimeout(() => setExportMessage(''), 3000);
+
+      setSelectedIds([]);
+      setSelectAll(false);
+      setShowDeleteSelectedAlert(false);
+
+      // Refresh list
+      await fetchShortcuts();
+    } catch (err) {
+      console.error('Failed to delete shortcuts:', err);
+      setError('Failed to delete shortcuts');
+    }
   };
 
   // Get selected count
@@ -74,39 +166,33 @@ const Shortcuts = () => {
       return;
     }
 
-    // Determine which shortcuts to export
-    const shortcutsToExport = selectedCount > 0 
+    const shortcutsToExport = selectedCount > 0
       ? shortcuts.filter(shortcut => selectedIds.includes(shortcut.id))
       : shortcuts;
 
-    // CSV headers
-    const headers = ['ID', 'Action Type', 'Shortcut Command', 'Message'];
-    
-    // Convert shortcuts to CSV rows
+    const headers = ['ID', 'Action Type', 'Command', 'Message', 'Created At'];
+
     const csvRows = [
-      headers.join(','), // Header row
+      headers.join(','),
       ...shortcutsToExport.map(shortcut => [
         shortcut.id,
-        `"${shortcut.key}"`,
-        `"${shortcut.action}"`,
-        `"${shortcut.description.replace(/"/g, '""')}"` // Escape quotes in description
+        `"${shortcut.action_type}"`,
+        `"/${shortcut.command}"`,
+        `"${shortcut.message.replace(/"/g, '""')}"`,
+        `"${new Date(shortcut.created_at).toLocaleString()}"`
       ].join(','))
     ];
 
-    // Create CSV string
     const csvString = csvRows.join('\n');
-    
-    // Create blob and download link
     const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    
-    // Create filename with timestamp
+
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    const filename = selectedCount > 0 
+    const filename = selectedCount > 0
       ? `shortcuts-selected-${timestamp}.csv`
       : `shortcuts-all-${timestamp}.csv`;
-    
+
     link.href = url;
     link.setAttribute('download', filename);
     document.body.appendChild(link);
@@ -114,36 +200,46 @@ const Shortcuts = () => {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    // Show success message
     const exportedCount = shortcutsToExport.length;
-    setExportMessage(`Exported ${exportedCount} shortcut${exportedCount !== 1 ? 's' : ''} to ${filename}`);
+    setExportMessage(`📥 Exported ${exportedCount} shortcut${exportedCount !== 1 ? 's' : ''} to ${filename}`);
     setTimeout(() => setExportMessage(''), 3000);
   };
+
+  if (loading) {
+    return (
+      <Container fluid className="d-flex justify-content-center align-items-center" style={{ minHeight: '400px' }}>
+        <div className="text-center">
+          <Spinner animation="border" variant="primary" />
+          <p className="mt-3">Loading shortcuts...</p>
+        </div>
+      </Container>
+    );
+  }
 
   return (
     <Container fluid>
       <Row className="align-items-center mb-4">
         <Col>
-          <h4 className="mb-0">Shortcuts</h4>
-          <p className="text-muted mb-0">Manage shortcuts for faster response</p>
+          <h4 className="mb-0">⚡ Shortcuts</h4>
+          <p className="text-muted mb-0">Quick responses for faster admin replies • Use /command in admin chat</p>
         </Col>
         <Col className="text-end">
           <Button variant="primary" onClick={() => setShowAddModal(true)} className="me-2">
             <i className="ph ph-plus me-2"></i>Add Shortcut
           </Button>
-          
+
           {selectedCount > 0 && (
-            <Button 
-              variant="danger" 
+            <Button
+              variant="danger"
               onClick={() => setShowDeleteSelectedAlert(true)}
               className="me-2"
             >
               <i className="ph ph-trash me-2"></i>Delete Selected ({selectedCount})
             </Button>
           )}
-          
-          <Button 
-            variant="outline-secondary" 
+
+          <Button
+            variant="outline-secondary"
             onClick={handleExportCSV}
             disabled={shortcuts.length === 0}
           >
@@ -157,14 +253,29 @@ const Shortcuts = () => {
       {exportMessage && (
         <Row className="mb-3">
           <Col>
-            <Alert 
-              variant="success" 
+            <Alert
+              variant="success"
               className="py-2"
               onClose={() => setExportMessage('')}
               dismissible
             >
-              <i className="ph ph-check-circle me-2"></i>
               {exportMessage}
+            </Alert>
+          </Col>
+        </Row>
+      )}
+
+      {error && (
+        <Row className="mb-3">
+          <Col>
+            <Alert
+              variant="danger"
+              className="py-2"
+              onClose={() => setError('')}
+              dismissible
+            >
+              <i className="ph ph-warning me-2"></i>
+              {error}
             </Alert>
           </Col>
         </Row>
@@ -178,10 +289,9 @@ const Shortcuts = () => {
                 <span>
                   <i className="ph ph-info me-2"></i>
                   {selectedCount} shortcut{selectedCount !== 1 ? 's' : ''} selected
-                  {selectedCount > 0 && ' - will be exported if you click Export CSV'}
                 </span>
-                <Button 
-                  variant="outline-info" 
+                <Button
+                  variant="outline-info"
                   size="sm"
                   onClick={() => {
                     setSelectedIds([]);
@@ -212,10 +322,10 @@ const Shortcuts = () => {
                           disabled={shortcuts.length === 0}
                         />
                       </th>
-                      <th width="15%">Action</th>
-                      <th width="20%">Shortcut</th>
+                      <th width="15%">Action Type</th>
+                      <th width="20%">Command</th>
                       <th width="45%">Message</th>
-                      <th width="15%" className="text-center">Delete</th>
+                      <th width="15%" className="text-center">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -230,18 +340,20 @@ const Shortcuts = () => {
                         </td>
                         <td>
                           <code className="bg-light p-2 rounded d-block text-center">
-                            {shortcut.key}
+                            {shortcut.action_type}
                           </code>
                         </td>
-                        <td className="fw-medium">{shortcut.action}</td>
+                        <td className="fw-medium">
+                          <code className="text-primary">/{shortcut.command}</code>
+                        </td>
                         <td>
                           <div className="text-truncate" style={{ maxWidth: '500px' }}>
-                            {shortcut.description}
+                            {shortcut.message}
                           </div>
                         </td>
                         <td className="text-center">
-                          <Button 
-                            variant="outline-danger" 
+                          <Button
+                            variant="outline-danger"
                             size="sm"
                             onClick={() => handleDeleteShortcut(shortcut.id)}
                             title="Delete this shortcut"
@@ -259,7 +371,10 @@ const Shortcuts = () => {
                     <i className="ph ph-keyboard" style={{ fontSize: '3rem', color: '#6c757d' }}></i>
                   </div>
                   <h5>No shortcuts yet</h5>
-                  <p className="text-muted">Click "Add Shortcut" to create your first shortcut</p>
+                  <p className="text-muted mb-3">Create shortcuts to send quick responses in admin chat</p>
+                  <Button variant="primary" onClick={() => setShowAddModal(true)}>
+                    <i className="ph ph-plus me-2"></i>Add Your First Shortcut
+                  </Button>
                 </div>
               )}
             </Card.Body>
@@ -270,15 +385,15 @@ const Shortcuts = () => {
       {/* Add Shortcut Modal */}
       <Modal show={showAddModal} onHide={() => setShowAddModal(false)} centered>
         <Modal.Header closeButton>
-          <Modal.Title>Add New Shortcut</Modal.Title>
+          <Modal.Title>⚡ Add New Shortcut</Modal.Title>
         </Modal.Header>
         <Modal.Body>
           <Form>
             <Form.Group className="mb-3">
               <Form.Label>Action Type</Form.Label>
               <Form.Select
-                value={newShortcut.key}
-                onChange={(e) => setNewShortcut({...newShortcut, key: e.target.value})}
+                value={newShortcut.action_type}
+                onChange={(e) => setNewShortcut({...newShortcut, action_type: e.target.value})}
               >
                 <option value="">Select action type</option>
                 <option value="Public">Public</option>
@@ -287,30 +402,36 @@ const Shortcuts = () => {
                 <option value="System">System</option>
               </Form.Select>
               <Form.Text className="text-muted">
-                Choose the action type for this shortcut
+                Choose the category for this shortcut
               </Form.Text>
             </Form.Group>
             <Form.Group className="mb-3">
-              <Form.Label>Shortcut Command</Form.Label>
-              <Form.Control
-                type="text"
-                placeholder="e.g., hello, thanks, services"
-                value={newShortcut.action}
-                onChange={(e) => setNewShortcut({...newShortcut, action: e.target.value})}
-              />
+              <Form.Label>Command</Form.Label>
+              <div className="input-group">
+                <span className="input-group-text">/</span>
+                <Form.Control
+                  type="text"
+                  placeholder="hello, refund, support..."
+                  value={newShortcut.command}
+                  onChange={(e) => setNewShortcut({...newShortcut, command: e.target.value.toLowerCase()})}
+                />
+              </div>
               <Form.Text className="text-muted">
-                This is the command users will type to trigger the message
+                Type this in admin chat to use the shortcut (e.g., /hello)
               </Form.Text>
             </Form.Group>
             <Form.Group className="mb-3">
               <Form.Label>Message Content</Form.Label>
               <Form.Control
                 as="textarea"
-                rows={3}
-                placeholder="Enter the message that will be sent when this shortcut is used..."
-                value={newShortcut.description}
-                onChange={(e) => setNewShortcut({...newShortcut, description: e.target.value})}
+                rows={4}
+                placeholder="Hello! Thank you for contacting us. How can I help you today?"
+                value={newShortcut.message}
+                onChange={(e) => setNewShortcut({...newShortcut, message: e.target.value})}
               />
+              <Form.Text className="text-muted">
+                This message will be sent when you type /{newShortcut.command || 'command'}
+              </Form.Text>
             </Form.Group>
           </Form>
         </Modal.Body>
@@ -318,8 +439,22 @@ const Shortcuts = () => {
           <Button variant="secondary" onClick={() => setShowAddModal(false)}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleAddShortcut}>
-            Add Shortcut
+          <Button
+            variant="primary"
+            onClick={handleAddShortcut}
+            disabled={saving || !newShortcut.action_type || !newShortcut.command || !newShortcut.message}
+          >
+            {saving ? (
+              <>
+                <Spinner animation="border" size="sm" className="me-2" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <i className="ph ph-check me-2"></i>
+                Create Shortcut
+              </>
+            )}
           </Button>
         </Modal.Footer>
       </Modal>
@@ -341,10 +476,10 @@ const Shortcuts = () => {
             <ul className="list-unstyled">
               {shortcuts
                 .filter(shortcut => selectedIds.includes(shortcut.id))
-                .slice(0, 5) // Show only first 5 to avoid too long list
+                .slice(0, 5)
                 .map(shortcut => (
                   <li key={shortcut.id} className="mb-1">
-                    <code>{shortcut.action}</code> - {shortcut.description.substring(0, 50)}...
+                    <code className="text-primary">/{shortcut.command}</code> - {shortcut.message.substring(0, 50)}...
                   </li>
                 ))}
               {selectedCount > 5 && (
@@ -358,6 +493,7 @@ const Shortcuts = () => {
             Cancel
           </Button>
           <Button variant="danger" onClick={handleDeleteSelected}>
+            <i className="ph ph-trash me-2"></i>
             Delete {selectedCount} Shortcut{selectedCount !== 1 ? 's' : ''}
           </Button>
         </Modal.Footer>

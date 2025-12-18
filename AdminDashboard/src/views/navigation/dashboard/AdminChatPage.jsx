@@ -17,7 +17,77 @@ export default function AdminChatPage() {
   const chatContainerRef = useRef(null);
   const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
   const lastMessageCountRef = useRef(0);
+  const [shortcuts, setShortcuts] = useState([]);
+  const [showShortcutsDropdown, setShowShortcutsDropdown] = useState(false);
+  const [filteredShortcuts, setFilteredShortcuts] = useState([]);
 
+    // Fetch shortcuts on mount
+    useEffect(() => {
+      const fetchShortcuts = async () => {
+        try {
+          const res = await axios.get(`${API_URL}/shortcuts/`, {
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`
+            }
+          });
+          setShortcuts(res.data);
+        } catch (error) {
+          console.error('Failed to fetch shortcuts:', error);
+        }
+      };
+
+      if (token) {
+        fetchShortcuts();
+      }
+    }, [token]);
+
+    // Detect shortcut commands (starting with /)
+    const handleReplyMessageChange = (e) => {
+      const value = e.target.value;
+      setReplyMessage(value);
+
+      // Detect if typing a shortcut command
+      if (value.startsWith('/')) {
+        const command = value.slice(1).toLowerCase();
+
+        if (command.length > 0) {
+          // Filter shortcuts based on typed command
+          const filtered = shortcuts.filter(s =>
+            s.command.toLowerCase().startsWith(command)
+          );
+          setFilteredShortcuts(filtered);
+          setShowShortcutsDropdown(filtered.length > 0);
+        } else {
+          // Show all shortcuts if just "/" is typed
+          setFilteredShortcuts(shortcuts);
+          setShowShortcutsDropdown(shortcuts.length > 0);
+        }
+      } else {
+        setShowShortcutsDropdown(false);
+      }
+    };
+
+    // Use a shortcut
+    const handleUseShortcut = (shortcut) => {
+      setReplyMessage(shortcut.message);
+      setShowShortcutsDropdown(false);
+    };
+
+    // Handle keyboard navigation in shortcuts dropdown
+    const handleKeyDown = (e) => {
+      if (showShortcutsDropdown && filteredShortcuts.length > 0) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          // Implement arrow key navigation if needed
+        } else if (e.key === 'Enter' && filteredShortcuts.length === 1) {
+          e.preventDefault();
+          handleUseShortcut(filteredShortcuts[0]);
+        } else if (e.key === 'Escape') {
+          setShowShortcutsDropdown(false);
+        }
+      }
+    };
   // Fetch session details
   const fetchSessionDetails = async () => {
     try {
@@ -272,42 +342,124 @@ export default function AdminChatPage() {
 
       {/* Reply Input */}
       <Card className="shadow-sm mb-4">
-        <Card.Body>
-          <Form onSubmit={handleSendReply}>
-            <Form.Group className="mb-3">
-              <Form.Label className="fw-bold">
-                💬 Send Admin Reply
-                <Badge bg="success" className="ms-2">
-                  User will see this instantly
-                </Badge>
-              </Form.Label>
-              <Form.Control
-                as="textarea"
-                rows={3}
-                value={replyMessage}
-                onChange={(e) => setReplyMessage(e.target.value)}
-                placeholder="Type your admin reply here... This will replace the bot's response."
-                disabled={sending}
-              />
-            </Form.Group>
+              <Card.Body>
+                <Form onSubmit={handleSendReply}>
+                  <Form.Group className="mb-3" style={{ position: 'relative' }}>
+                    <Form.Label className="fw-bold d-flex justify-content-between align-items-center">
+                      <span>
+                        💬 Send Admin Reply
+                        <Badge bg="success" className="ms-2">User will see this instantly</Badge>
+                      </span>
+                      <small className="text-muted fw-normal">
+                        💡 Type / for shortcuts ({shortcuts.length} available)
+                      </small>
+                    </Form.Label>
 
-            <div className="d-flex justify-content-between align-items-center">
-              <small className="text-muted">💡 Your reply will appear with a green background and "Support Team" label</small>
+                    <Form.Control
+                      as="textarea"
+                      rows={3}
+                      value={replyMessage}
+                      onChange={handleReplyMessageChange}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Type your admin reply... Or type / to use a shortcut"
+                      disabled={sending}
+                    />
 
-              <Button type="submit" variant="success" disabled={sending || !replyMessage.trim()} size="lg">
-                {sending ? (
-                  <>
-                    <Spinner animation="border" size="sm" className="me-2" />
-                    Sending...
-                  </>
-                ) : (
-                  <>📤 Send Admin Reply</>
-                )}
-              </Button>
-            </div>
-          </Form>
-        </Card.Body>
-      </Card>
+                    {/* Shortcuts Dropdown */}
+                    {showShortcutsDropdown && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          bottom: '100%',
+                          left: 0,
+                          right: 0,
+                          backgroundColor: 'white',
+                          border: '1px solid #ddd',
+                          borderRadius: '8px',
+                          maxHeight: '200px',
+                          overflowY: 'auto',
+                          boxShadow: '0 -4px 12px rgba(0,0,0,0.1)',
+                          zIndex: 1000,
+                          marginBottom: '8px'
+                        }}
+                      >
+                        <div className="p-2 bg-light border-bottom">
+                          <small className="text-muted fw-bold">
+                            ⚡ Available Shortcuts ({filteredShortcuts.length})
+                          </small>
+                        </div>
+                        {filteredShortcuts.map(shortcut => (
+                          <div
+                            key={shortcut.id}
+                            onClick={() => handleUseShortcut(shortcut)}
+                            style={{
+                              padding: '12px',
+                              cursor: 'pointer',
+                              borderBottom: '1px solid #f0f0f0',
+                              transition: 'background 0.2s'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+                          >
+                            <div className="d-flex justify-content-between align-items-start">
+                              <div style={{ flex: 1 }}>
+                                <div className="mb-1">
+                                  <code className="text-primary fw-bold">/{shortcut.command}</code>
+                                  <Badge bg="secondary" className="ms-2" style={{ fontSize: '0.7rem' }}>
+                                    {shortcut.action_type}
+                                  </Badge>
+                                </div>
+                                <small className="text-muted d-block text-truncate" style={{ maxWidth: '90%' }}>
+                                  {shortcut.message}
+                                </small>
+                              </div>
+                              <small className="text-muted">Click to use</small>
+                            </div>
+                          </div>
+                        ))}
+
+                        {filteredShortcuts.length === 0 && (
+                          <div className="p-3 text-center text-muted">
+                            <small>No shortcuts found. Press ESC to close.</small>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </Form.Group>
+
+                  <div className="d-flex justify-content-between align-items-center">
+                    <div>
+                      <small className="text-muted d-block mb-1">
+                        💡 Your reply will appear with a green background and "Support Team" label
+                      </small>
+                      {shortcuts.length > 0 && (
+                        <small className="text-success d-block">
+                          ⚡ {shortcuts.length} shortcuts available - Type / to see all
+                        </small>
+                      )}
+                    </div>
+
+                    <Button
+                      type="submit"
+                      variant="success"
+                      disabled={sending || !replyMessage.trim()}
+                      size="lg"
+                    >
+                      {sending ? (
+                        <>
+                          <Spinner animation="border" size="sm" className="me-2" />
+                          Sending...
+                        </>
+                      ) : (
+                        <>
+                          📤 Send Admin Reply
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </Form>
+              </Card.Body>
+            </Card>
     </div>
   );
 }
