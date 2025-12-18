@@ -37,7 +37,7 @@ import { API_URL } from '../../config';
 
 const Duration = () => {
   const navigate = useNavigate();
-
+  
   // State management
   const [dateRange, setDateRange] = useState('last7days');
   const [loading, setLoading] = useState(true);
@@ -51,6 +51,15 @@ const Duration = () => {
     active_users_now: 0,
     avg_response_time: 0,
     total_messages: 0
+  });
+  const [sessionStats, setSessionStats] = useState({
+    total_sessions: 0,
+    avg_duration_minutes: 0,
+    min_duration_minutes: 0,
+    max_duration_minutes: 0,
+    total_messages: 0,
+    avg_messages_per_session: 0,
+    avg_response_time: 0
   });
   const [chatSessions, setChatSessions] = useState([]);
   const [sessionDurations, setSessionDurations] = useState({});
@@ -120,15 +129,17 @@ const Duration = () => {
 
       console.log('📅 Fetching data with params:', dateParams);
 
-      const [dailyResponse, dashboardResponse, sessionsResponse] = await Promise.all([
+      const [dailyResponse, dashboardResponse, sessionStatsResponse, sessionsResponse] = await Promise.all([
         api.get('/client/stats/daily', { params: dateParams }),
         api.get('/client/stats/dashboard'),
+        api.get('/client/stats/sessions', { params: dateParams }), // NEW: Get aggregated session stats
         api.get('/client/sessions/me')
       ]);
 
       console.log('✅ API Responses:', {
         daily: dailyResponse.data,
         dashboard: dashboardResponse.data,
+        sessionStats: sessionStatsResponse.data,
         sessions: sessionsResponse.data
       });
 
@@ -138,9 +149,12 @@ const Duration = () => {
 
       // Set dashboard stats
       setDashboardStats(dashboardResponse.data);
+      
+      // Set session stats (filtered by date range)
+      setSessionStats(sessionStatsResponse.data);
 
-      // Fetch session details and durations
-      await fetchSessionDetails(sessionsResponse.data.sessions || []);
+      // Fetch session details and durations, then filter by date range
+      await fetchSessionDetails(sessionsResponse.data.sessions || [], dateParams);
     } catch (err) {
       const errorMsg = err.response?.data?.detail || err.message || 'Failed to fetch data';
       setError(errorMsg);
@@ -157,7 +171,7 @@ const Duration = () => {
   // Load data on mount and when date range changes
   useEffect(() => {
     fetchAllData();
-
+    
     // Auto-refresh every 30 seconds
     const interval = setInterval(fetchAllData, 30000);
     return () => clearInterval(interval);
@@ -217,9 +231,9 @@ const Duration = () => {
             try {
               const durationResponse = await api.get(`/client/session-duration/${sessionId}`);
               durationData = durationResponse.data;
-
+              
               // Store duration in state
-              setSessionDurations((prev) => ({
+              setSessionDurations(prev => ({
                 ...prev,
                 [sessionId]: durationData
               }));
@@ -270,7 +284,7 @@ const Duration = () => {
     // Use actual session duration if available (time chatbot was open)
     let actualDuration = messageDurationMinutes;
     let isLive = false;
-
+    
     if (durationData) {
       actualDuration = durationData.duration_minutes || messageDurationMinutes;
       isLive = durationData.is_active || false;
@@ -282,7 +296,9 @@ const Duration = () => {
     );
 
     const avgResponseTime =
-      responseTimeChats.length > 0 ? responseTimeChats.reduce((sum, chat) => sum + chat.response_time, 0) / responseTimeChats.length : 0;
+      responseTimeChats.length > 0 
+        ? responseTimeChats.reduce((sum, chat) => sum + chat.response_time, 0) / responseTimeChats.length 
+        : 0;
 
     return {
       id: sessionId,
@@ -299,35 +315,47 @@ const Duration = () => {
     };
   };
 
-  // Calculate overall stats from daily data
+  // Calculate overall stats from SESSION data (not daily stats)
   const calculateOverallStats = () => {
-    if (dailyStats.length === 0) {
+    // Use actual session durations from chatSessions, not daily response times
+    if (chatSessions.length === 0) {
       return {
         avgDuration: 0,
         minDuration: 0,
         maxDuration: 0,
-        avgResponseTime: 0
+        avgResponseTime: 0,
+        totalSessions: 0
       };
     }
 
-    const durations = dailyStats.map((stat) => stat.responseTimeMin).filter((d) => d > 0);
-    const responseTimes = dailyStats.map((stat) => stat.responseTime).filter((rt) => rt > 0);
+    // Get all session durations (in minutes)
+    const sessionDurations = chatSessions.map((s) => s.durationValue).filter((d) => d > 0);
+    
+    // Get all session response times (in seconds)
+    const sessionResponseTimes = chatSessions.map((s) => s.avgResponseTime).filter((rt) => rt > 0);
 
-    if (durations.length === 0) {
+    // If no valid durations, return zeros
+    if (sessionDurations.length === 0) {
       return {
         avgDuration: 0,
         minDuration: 0,
         maxDuration: 0,
-        avgResponseTime: 0
+        avgResponseTime: sessionResponseTimes.length > 0 
+          ? Math.round((sessionResponseTimes.reduce((a, b) => a + b, 0) / sessionResponseTimes.length) * 100) / 100 
+          : 0,
+        totalSessions: chatSessions.length
       };
     }
 
     return {
-      avgDuration: Math.round((durations.reduce((a, b) => a + b, 0) / durations.length) * 10) / 10,
-      minDuration: Math.min(...durations),
-      maxDuration: Math.max(...durations),
+      avgDuration: Math.round((sessionDurations.reduce((a, b) => a + b, 0) / sessionDurations.length) * 10) / 10,
+      minDuration: Math.min(...sessionDurations),
+      maxDuration: Math.max(...sessionDurations),
       avgResponseTime:
-        responseTimes.length > 0 ? Math.round((responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length) * 100) / 100 : 0
+        sessionResponseTimes.length > 0 
+          ? Math.round((sessionResponseTimes.reduce((a, b) => a + b, 0) / sessionResponseTimes.length) * 100) / 100 
+          : 0,
+      totalSessions: chatSessions.length
     };
   };
 
@@ -456,25 +484,33 @@ const Duration = () => {
         </CardContent>
       </Card>
 
-      {/* Stats Cards */}
-      {dailyStats.length > 0 && (
+      {/* Dynamic Stats Cards based on filter - NOW USES sessionStats */}
+      {sessionStats.total_sessions > 0 ? (
         <Grid container spacing={3} sx={{ mb: 3 }}>
+          {/* Card 1: Total Sessions */}
           <Grid item xs={12} md={3}>
             <Card sx={{ bgcolor: '#00C49F', color: 'white', height: '100%' }}>
               <CardContent sx={{ textAlign: 'center' }}>
                 <Typography variant="h6" gutterBottom>
-                  Min Duration
+                  {dateRange === 'today' ? "Today's Sessions" : 
+                   dateRange === 'yesterday' ? "Yesterday's Sessions" : 
+                   dateRange === 'last7days' ? "This Week" : 
+                   "This Month"}
                 </Typography>
                 <Typography variant="h4" fontWeight="bold">
-                  {stats.minDuration} min
+                  {sessionStats.total_sessions}
                 </Typography>
                 <Typography variant="body2" sx={{ mt: 1, opacity: 0.9 }}>
-                  Shortest conversation
+                  {dateRange === 'today' ? "Active today" : 
+                   dateRange === 'yesterday' ? "Total yesterday" : 
+                   dateRange === 'last7days' ? "Last 7 days" : 
+                   "Last 30 days"}
                 </Typography>
               </CardContent>
             </Card>
           </Grid>
 
+          {/* Card 2: Average Duration */}
           <Grid item xs={12} md={3}>
             <Card sx={{ bgcolor: '#0088FE', color: 'white', height: '100%' }}>
               <CardContent sx={{ textAlign: 'center' }}>
@@ -482,47 +518,64 @@ const Duration = () => {
                   Avg Duration
                 </Typography>
                 <Typography variant="h4" fontWeight="bold">
-                  {stats.avgDuration} min
+                  {Math.round(sessionStats.avg_duration_minutes)} min
                 </Typography>
                 <Typography variant="body2" sx={{ mt: 1, opacity: 0.9 }}>
-                  Average conversation
+                  {dateRange === 'today' ? "Average today" : 
+                   dateRange === 'yesterday' ? "Average yesterday" : 
+                   dateRange === 'last7days' ? "7-day average" : 
+                   "30-day average"}
                 </Typography>
               </CardContent>
             </Card>
           </Grid>
 
+          {/* Card 3: Peak Duration */}
           <Grid item xs={12} md={3}>
             <Card sx={{ bgcolor: '#FF8042', color: 'white', height: '100%' }}>
               <CardContent sx={{ textAlign: 'center' }}>
                 <Typography variant="h6" gutterBottom>
-                  Max Duration
+                  {dateRange === 'today' || dateRange === 'yesterday' ? "Longest Session" : "Peak Duration"}
                 </Typography>
                 <Typography variant="h4" fontWeight="bold">
-                  {stats.maxDuration} min
+                  {Math.round(sessionStats.max_duration_minutes)} min
                 </Typography>
                 <Typography variant="body2" sx={{ mt: 1, opacity: 0.9 }}>
-                  Longest conversation
+                  {dateRange === 'today' ? "Best today" : 
+                   dateRange === 'yesterday' ? "Best yesterday" : 
+                   dateRange === 'last7days' ? "Weekly peak" : 
+                   "Monthly peak"}
                 </Typography>
               </CardContent>
             </Card>
           </Grid>
 
+          {/* Card 4: Total Messages or Response Time */}
           <Grid item xs={12} md={3}>
             <Card sx={{ bgcolor: '#8884d8', color: 'white', height: '100%' }}>
               <CardContent sx={{ textAlign: 'center' }}>
                 <Typography variant="h6" gutterBottom>
-                  Avg Response
+                  {dateRange === 'today' || dateRange === 'yesterday' ? "Avg Response" : "Total Messages"}
                 </Typography>
                 <Typography variant="h4" fontWeight="bold">
-                  {stats.avgResponseTime}s
+                  {dateRange === 'today' || dateRange === 'yesterday' 
+                    ? `${sessionStats.avg_response_time}s` 
+                    : sessionStats.total_messages}
                 </Typography>
                 <Typography variant="body2" sx={{ mt: 1, opacity: 0.9 }}>
-                  AI response time
+                  {dateRange === 'today' ? "AI speed today" : 
+                   dateRange === 'yesterday' ? "AI speed yesterday" : 
+                   dateRange === 'last7days' ? "Last 7 days" : 
+                   "Last 30 days"}
                 </Typography>
               </CardContent>
             </Card>
           </Grid>
         </Grid>
+      ) : (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          📊 No sessions found for the selected date range. Try selecting "Last 7 Days" or "Last 30 Days" to see data.
+        </Alert>
       )}
 
       {/* Chart */}
@@ -530,7 +583,9 @@ const Duration = () => {
         <CardHeader
           title="Response Time Trend"
           subheader={
-            dailyStats.length > 0 ? `Showing AI response times over ${dailyStats.length} days` : 'No data available for the selected period'
+            dailyStats.length > 0 
+              ? `Showing AI response times over ${dailyStats.length} days` 
+              : 'No data available for the selected period'
           }
         />
         <CardContent>
@@ -576,11 +631,11 @@ const Duration = () => {
           title={`Recent Chat Sessions (${chatSessions.length})`}
           action={
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <Chip
-                label={`${chatSessions.filter((s) => s.isLive).length} LIVE`}
-                color="success"
+              <Chip 
+                label={`${chatSessions.filter(s => s.isLive).length} LIVE`} 
+                color="success" 
                 size="small"
-                sx={{ animation: chatSessions.filter((s) => s.isLive).length > 0 ? 'pulse 2s infinite' : 'none' }}
+                sx={{ animation: chatSessions.filter(s => s.isLive).length > 0 ? 'pulse 2s infinite' : 'none' }}
               />
               <Chip label={`${chatSessions.length} total`} color="primary" variant="outlined" size="small" />
             </Box>
@@ -605,8 +660,8 @@ const Duration = () => {
                 </TableHead>
                 <TableBody>
                   {chatSessions.map((session) => (
-                    <TableRow
-                      key={session.id}
+                    <TableRow 
+                      key={session.id} 
                       hover
                       sx={{
                         bgcolor: session.isLive ? 'rgba(76, 175, 80, 0.05)' : 'inherit'
@@ -614,7 +669,14 @@ const Duration = () => {
                     >
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          {session.isLive && <Chip label="LIVE" color="success" size="small" sx={{ height: 20, fontSize: '0.7rem' }} />}
+                          {session.isLive && (
+                            <Chip 
+                              label="LIVE" 
+                              color="success" 
+                              size="small" 
+                              sx={{ height: 20, fontSize: '0.7rem' }}
+                            />
+                          )}
                           <Typography variant="body2" fontFamily="monospace">
                             {session.id.substring(0, 12)}...
                           </Typography>
@@ -628,7 +690,13 @@ const Duration = () => {
                           <Typography
                             variant="body2"
                             fontWeight="bold"
-                            color={session.durationValue > 20 ? 'error.main' : session.durationValue < 5 ? 'success.main' : 'text.primary'}
+                            color={
+                              session.durationValue > 20 
+                                ? 'error.main' 
+                                : session.durationValue < 5 
+                                  ? 'success.main' 
+                                  : 'text.primary'
+                            }
                           >
                             ⏱️ {session.duration}
                           </Typography>
@@ -648,14 +716,23 @@ const Duration = () => {
                         <Typography variant="body2">{session.avgResponseTime}s</Typography>
                       </TableCell>
                       <TableCell>
-                        <Chip label={session.status} size="small" color={getStatusColor(session.status)} variant="outlined" />
+                        <Chip 
+                          label={session.status} 
+                          size="small" 
+                          color={getStatusColor(session.status)} 
+                          variant="outlined" 
+                        />
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2">{session.country}</Typography>
                       </TableCell>
                       <TableCell>
                         <Tooltip title="Open admin chat">
-                          <IconButton size="small" color="primary" onClick={() => handleOpenChat(session.id)}>
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() => handleOpenChat(session.id)}
+                          >
                             <ChatIcon />
                           </IconButton>
                         </Tooltip>
