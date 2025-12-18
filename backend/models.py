@@ -98,6 +98,23 @@ class Task(SQLModel, table=True):
         ),
     )
 
+class Shortcut(SQLModel, table=True):
+    __tablename__="shortcut"
+    """Shortcuts for quick admin responses"""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    client_id: str = Field(index=True)  # Each client has their own shortcuts
+    action_type: str  # Public, Personal, Admin, System
+    command: str  # The shortcut command (e.g., "hello", "refund")
+    message: str  # The full message to send
+    created_at: datetime = Field(
+        default_factory=utc_now,
+        sa_column=Column(DateTime, nullable=False, server_default=func.now()),
+    )
+    updated_at: datetime = Field(
+        default_factory=utc_now,
+        sa_column=Column(DateTime, nullable=False, server_default=func.now()),
+    )
+    is_active: int = Field(default=1)  # Soft delete
 
 # -----------------------------------------------------------------------------
 # Helper Functions (Async)
