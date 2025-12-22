@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from .routes import auth,chat,domain,daily_stats,crawl_embed_pipeline,custom_files,admin_reply,shortcuts
 from .config import settings
 
-
 # === FastAPI App ===
 app = FastAPI()
 
