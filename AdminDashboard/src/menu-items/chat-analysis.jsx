@@ -18,19 +18,11 @@ const chatAnalysis = {
           url: '/duration',
           breadcrumbs: false
         },
-        
         {
           id: 'first-response-time',
           title: 'First Response Time',
           type: 'item',
           url: '/first-response-time',
-          breadcrumbs: false
-        },
-        {
-          id: 'user-satisfaction',
-          title: 'User Satisfaction',
-          type: 'item',
-          url: '/user-satisfaction',
           breadcrumbs: false
         }
       ]
