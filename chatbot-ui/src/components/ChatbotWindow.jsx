@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, X, User, Bot, UserCheck, RefreshCw, Plus } from "lucide-react";
-
-const API_URL = "http://localhost:8000"; // Update with your API URL
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Send, X, User, Bot, UserCheck, Plus } from "lucide-react";
+import { API_URL } from "../config.js";
 
 const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
   const [messages, setMessages] = useState([]);
@@ -9,12 +10,11 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
   const [isTyping, setIsTyping] = useState(false);
   const [showSessionPrompt, setShowSessionPrompt] = useState(true);
   const [currentSessionId, setCurrentSessionId] = useState(null);
-  const [followUpSuggestions, setFollowUpSuggestions] = useState([]);
   const [lastMessageId, setLastMessageId] = useState(null);
   const messagesEndRef = useRef(null);
   const pollingRef = useRef(null);
+  const isSendingRef = useRef(false);
 
-  // 🔥 FIX: Use session ID passed from parent (already created in Chatbot.jsx)
   useEffect(() => {
     console.log("📍 ChatbotWindow mounted with:", {
       clientId,
@@ -23,11 +23,8 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
     });
 
     if (sessionId) {
-      // Use the session ID from parent component
       setCurrentSessionId(sessionId);
       setShowSessionPrompt(false);
-      
-      // Load existing chat history
       console.log("📚 Loading chat history for session:", sessionId);
       loadHistory(sessionId);
     } else {
@@ -36,12 +33,10 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
     }
   }, [clientId, sessionId]);
 
-  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isTyping, followUpSuggestions]);
+  }, [messages, isTyping]);
 
-  // Load chat history
   const loadHistory = async (sessId) => {
     try {
       const response = await fetch(
@@ -64,16 +59,16 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           id: chat.id,
           sender: chat.role === "user" ? "user" : "bot",
           text: chat.message,
-          timestamp: new Date(chat.created_at).toLocaleTimeString([], {
+          timestamp: new Date(chat.created_at).toLocaleTimeString('en-IN', {
             hour: "2-digit",
             minute: "2-digit",
+            timeZone: "Asia/Kolkata",
           }),
           admin_override: chat.admin_override === 1,
         }));
 
         setMessages(formattedMessages);
-        
-        // Track last message ID for efficient polling
+
         if (formattedMessages.length > 0) {
           setLastMessageId(formattedMessages[formattedMessages.length - 1].id);
         }
@@ -87,7 +82,6 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
     const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     setCurrentSessionId(newSessionId);
     setMessages([]);
-    setFollowUpSuggestions([]);
     setShowSessionPrompt(false);
     setLastMessageId(null);
 
@@ -99,11 +93,15 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
     localStorage.setItem(storageKey, JSON.stringify(sessionData));
   };
 
-  // 🔥 IMPROVED POLLING - Detects admin messages and deletions
   useEffect(() => {
     if (showSessionPrompt || !currentSessionId) return;
 
     const pollMessages = async () => {
+      if (isSendingRef.current) {
+        console.log("⏸️ Skipping poll - message being sent");
+        return;
+      }
+
       try {
         const response = await fetch(
           `${API_URL}/client/chat-history/${clientId}/${currentSessionId}`,
@@ -125,28 +123,27 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
             id: chat.id,
             sender: chat.role === "user" ? "user" : "bot",
             text: chat.message,
-            timestamp: new Date(chat.created_at).toLocaleTimeString([], {
+            timestamp: new Date(chat.created_at).toLocaleTimeString('en-IN', {
               hour: "2-digit",
               minute: "2-digit",
+              timeZone: "Asia/Kolkata",
             }),
             admin_override: chat.admin_override === 1,
           }));
 
-          // 🔥 KEY FIX: Always update if message count or last ID changed
-          const hasNewMessages = 
+          const hasNewMessages =
             formattedMessages.length !== messages.length ||
-            (formattedMessages.length > 0 && 
+            (formattedMessages.length > 0 &&
              formattedMessages[formattedMessages.length - 1].id !== lastMessageId);
 
           if (hasNewMessages) {
             console.log("📩 New messages detected, updating...");
             setMessages(formattedMessages);
-            
+
             if (formattedMessages.length > 0) {
               setLastMessageId(formattedMessages[formattedMessages.length - 1].id);
             }
 
-            // Clear typing indicator if we received a new bot message
             const lastMsg = formattedMessages[formattedMessages.length - 1];
             if (lastMsg && lastMsg.sender === "bot") {
               setIsTyping(false);
@@ -158,10 +155,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       }
     };
 
-    // Poll immediately on mount
     pollMessages();
-
-    // Then poll every 2 seconds
     pollingRef.current = setInterval(pollMessages, 2000);
 
     return () => {
@@ -180,14 +174,18 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
 
   const handleSend = async (messageText = null) => {
     const textToSend = messageText || input.trim();
-    if (!textToSend) return;
+    if (!textToSend || isSendingRef.current) return;
 
-    const timestamp = new Date().toLocaleTimeString([], {
+    isSendingRef.current = true;
+
+    const timestamp = new Date().toLocaleTimeString('en-IN', {
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "Asia/Kolkata",
     });
+    const tempMessageId = `temp_${Date.now()}`;
     const newMessage = {
-      id: Date.now(), // Temporary ID
+      id: tempMessageId,
       sender: "user",
       text: textToSend,
       timestamp,
@@ -197,7 +195,6 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
     setMessages((prev) => [...prev, newMessage]);
     setInput("");
     setIsTyping(true);
-    setFollowUpSuggestions([]);
 
     try {
       const res = await fetch(`${API_URL}/client/chat/${clientId}`, {
@@ -218,7 +215,6 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
 
       const data = await res.json();
 
-      // Update session_id if backend provides a new one
       if (data.session_id && data.session_id !== currentSessionId) {
         setCurrentSessionId(data.session_id);
         const storageKey = `chatbot_session_${clientId}`;
@@ -229,86 +225,48 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         localStorage.setItem(storageKey, JSON.stringify(sessionData));
       }
 
-      // The polling will handle adding the bot response
-      // But we can add it immediately for better UX
+      const botMessage = {
+        id: `temp_bot_${Date.now()}`,
+        sender: "bot",
+        text: data.reply,
+        timestamp: new Date().toLocaleTimeString('en-IN', {
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "Asia/Kolkata",
+        }),
+        admin_override: false,
+      };
+
+      setMessages((prev) => [...prev, botMessage]);
+      setIsTyping(false);
+
+      // Allow polling to resume and sync with server after 2 seconds
       setTimeout(() => {
-        const botMessage = {
-          id: Date.now() + 1,
-          sender: "bot",
-          text: data.reply,
-          timestamp: new Date().toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          admin_override: false,
-        };
+        isSendingRef.current = false;
+      }, 2000);
 
-        setMessages((prev) => [...prev, botMessage]);
-
-        // Extract suggestions
-        const suggestions = [];
-        if (data.follow_up_question) {
-          suggestions.push({
-            type: "follow_up",
-            text: data.follow_up_question,
-          });
-        }
-        if (data.clarification_questions?.length > 0) {
-          data.clarification_questions.forEach((q) => {
-            suggestions.push({ type: "clarification", text: q });
-          });
-        }
-        if (data.probing_questions?.length > 0) {
-          data.probing_questions.slice(0, 2).forEach((q) => {
-            suggestions.push({ type: "probing", text: q });
-          });
-        }
-
-        setFollowUpSuggestions(suggestions);
-        setIsTyping(false);
-      }, 500);
     } catch (err) {
       console.error("Chat error:", err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now() + 1,
+          sender: "bot",
+          text: "⚠️ Error contacting backend.",
+          timestamp: new Date().toLocaleTimeString('en-IN', {
+            hour: "2-digit",
+            minute: "2-digit",
+            timeZone: "Asia/Kolkata",
+          }),
+          admin_override: false,
+        },
+      ]);
+      setIsTyping(false);
+
       setTimeout(() => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now() + 1,
-            sender: "bot",
-            text: "⚠️ Error contacting backend.",
-            timestamp: new Date().toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            admin_override: false,
-          },
-        ]);
-        setIsTyping(false);
-      }, 500);
+        isSendingRef.current = false;
+      }, 1000);
     }
-  };
-
-  const handleSuggestionClick = (suggestionText) => {
-    let processedText = suggestionText;
-
-    if (suggestionText.toLowerCase().startsWith("would you like")) {
-      processedText = suggestionText.replace(
-        /would you like (to know about|to know|me to|about)/gi,
-        "",
-      );
-      processedText = processedText.replace(/\?$/g, "").trim();
-      processedText = `yes, ${processedText}`;
-    } else if (suggestionText.toLowerCase().startsWith("do you need")) {
-      processedText = suggestionText
-        .replace(/do you need/gi, "")
-        .replace(/\?$/g, "")
-        .trim();
-      processedText = `yes, ${processedText}`;
-    } else if (suggestionText.endsWith("?")) {
-      processedText = "yes";
-    }
-
-    handleSend(processedText);
   };
 
   const handleKeyPress = (e) => {
@@ -337,7 +295,6 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         zIndex: 2000,
       }}
     >
-      {/* Header */}
       <div
         style={{
           backgroundColor: "white",
@@ -400,7 +357,6 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         </button>
       </div>
 
-      {/* Session Prompt Overlay */}
       {showSessionPrompt && (
         <div
           style={{
@@ -487,7 +443,6 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         </div>
       )}
 
-      {/* Messages */}
       <div
         style={{
           flex: 1,
@@ -602,7 +557,76 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
                   whiteSpace: "pre-wrap",
                 }}
               >
-                {msg.text}
+                {msg.sender === "bot" ? (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      p: ({ node, ...props }) => <p style={{ margin: 0, marginBottom: '8px' }} {...props} />,
+                      table: ({ node, ...props }) => (
+                        <div style={{ overflowX: 'auto', margin: '12px 0' }}>
+                          <table style={{
+                            borderCollapse: 'collapse',
+                            width: '100%',
+                            fontSize: '13px',
+                          }} {...props} />
+                        </div>
+                      ),
+                      thead: ({ node, ...props }) => (
+                        <thead style={{ backgroundColor: '#f3f4f6' }} {...props} />
+                      ),
+                      th: ({ node, ...props }) => (
+                        <th style={{
+                          border: '1px solid #d1d5db',
+                          padding: '8px',
+                          textAlign: 'left',
+                          fontWeight: '600',
+                        }} {...props} />
+                      ),
+                      td: ({ node, ...props }) => (
+                        <td style={{
+                          border: '1px solid #e5e7eb',
+                          padding: '8px',
+                        }} {...props} />
+                      ),
+                      tr: ({ node, ...props }) => (
+                        <tr style={{ borderBottom: '1px solid #e5e7eb' }} {...props} />
+                      ),
+                      ul: ({ node, ...props }) => <ul style={{ margin: '8px 0', paddingLeft: '20px' }} {...props} />,
+                      ol: ({ node, ...props }) => <ol style={{ margin: '8px 0', paddingLeft: '20px' }} {...props} />,
+                      li: ({ node, ...props }) => <li style={{ margin: '2px 0' }} {...props} />,
+                      code: ({ node, inline, ...props }) =>
+                        inline ? (
+                          <code style={{
+                            backgroundColor: '#f3f4f6',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '13px',
+                            fontFamily: 'monospace',
+                          }} {...props} />
+                        ) : (
+                          <code style={{
+                            display: 'block',
+                            backgroundColor: '#1f2937',
+                            color: '#f9fafb',
+                            padding: '8px',
+                            borderRadius: '6px',
+                            fontSize: '13px',
+                            fontFamily: 'monospace',
+                            overflow: 'auto',
+                            margin: '8px 0',
+                          }} {...props} />
+                        ),
+                      a: ({ node, ...props }) => (
+                        <a style={{ color: '#6366f1', textDecoration: 'underline' }} target="_blank" rel="noopener noreferrer" {...props} />
+                      ),
+                      strong: ({ node, ...props }) => <strong style={{ fontWeight: '600' }} {...props} />,
+                    }}
+                  >
+                    {msg.text}
+                  </ReactMarkdown>
+                ) : (
+                  msg.text
+                )}
               </div>
               <span
                 style={{
@@ -616,48 +640,6 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
             </div>
           </div>
         ))}
-
-        {/* Follow-up Suggestions */}
-        {followUpSuggestions.length > 0 && !isTyping && (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-              marginTop: "8px",
-              marginLeft: "36px",
-            }}
-          >
-            {followUpSuggestions.map((suggestion, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleSuggestionClick(suggestion.text)}
-                style={{
-                  padding: "8px 12px",
-                  backgroundColor: "white",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "12px",
-                  fontSize: "13px",
-                  color: "#6366f1",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  transition: "all 0.2s",
-                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#f9fafb";
-                  e.currentTarget.style.borderColor = "#6366f1";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "white";
-                  e.currentTarget.style.borderColor = "#e5e7eb";
-                }}
-              >
-                💬 {suggestion.text}
-              </button>
-            ))}
-          </div>
-        )}
 
         {isTyping && (
           <div style={{ display: "flex", gap: "8px" }}>
@@ -702,7 +684,6 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
       <div
         style={{
           backgroundColor: "white",

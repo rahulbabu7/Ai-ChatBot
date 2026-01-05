@@ -1,6 +1,6 @@
 """
-Enhanced Interactive RAG Chatbot System with Conversational Intelligence
-Features: Clarifying questions, follow-ups, context gathering, and guided conversations
+Enhanced Interactive RAG Chatbot with Structure-Aware Context Handling
+Properly interprets tables, lists, and structured data
 """
 
 import os
@@ -12,24 +12,17 @@ from backend.config import settings
 from groq import Groq
 from sentence_transformers import SentenceTransformer
 from chromadb import PersistentClient
-from form_system import FormCollector, FormTemplate, FormStatus
-# ──────────────────────────────────────────────────────────────────────────────
-# Configuration
-# ──────────────────────────────────────────────────────────────────────────────
 
+# Configuration
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 CHROMA_DB_DIR = os.path.abspath(os.path.join(_THIS_DIR, "..", "..", "ChromaDatabase", "vector-database", "chroma_db"))
 CLIENT_DATA_DIR = os.path.abspath(os.path.join(_THIS_DIR, "..", "..", "client_data"))
 
-# Model configurations
 EMBEDDING_MODEL = "multi-qa-mpnet-base-dot-v1"
 GROQ_MODEL = settings.GROQ_MODEL
 GROQ_API_KEY = settings.GROQ_API_KEY
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Global Singletons & Session Management
-# ──────────────────────────────────────────────────────────────────────────────
-
+# Global singletons
 _embedder_lock = threading.Lock()
 _groq_lock = threading.Lock()
 _sentence_model: Optional[SentenceTransformer] = None
@@ -40,18 +33,15 @@ _session_lock = threading.Lock()
 
 
 def _get_sentence_model() -> SentenceTransformer:
-    """Lazy initialization of embedding model."""
     global _sentence_model
     if _sentence_model is None:
         with _embedder_lock:
             if _sentence_model is None:
-                print("🔄 Loading embedding model...")
                 _sentence_model = SentenceTransformer(EMBEDDING_MODEL)
     return _sentence_model
 
 
 def _get_groq_client() -> Groq:
-    """Lazy initialization of Groq client."""
     global _groq_client
     if _groq_client is None:
         if not GROQ_API_KEY:
@@ -63,155 +53,11 @@ def _get_groq_client() -> Groq:
 
 
 def _get_chroma() -> PersistentClient:
-    """Lazy initialization of ChromaDB client."""
     global _chroma_client
     if _chroma_client is None:
         os.makedirs(CHROMA_DB_DIR, exist_ok=True)
         _chroma_client = PersistentClient(path=CHROMA_DB_DIR)
     return _chroma_client
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Conversational Intelligence System
-# ──────────────────────────────────────────────────────────────────────────────
-
-class ConversationalIntelligence:
-    """Analyzes queries and determines when to ask clarifying questions."""
-
-    AMBIGUITY_PATTERNS = {
-        'vague_pronouns': ['it', 'this', 'that', 'those', 'these', 'they'],
-        'incomplete_questions': ['what about', 'tell me about', 'how about'],
-        'multiple_topics': ['and', 'or', 'also'],
-        'unclear_intent': ['information', 'details', 'stuff', 'things'],
-    }
-
-    CLARIFICATION_STRATEGIES = {
-        'pricing': {
-            'questions': [
-                "Are you interested in pricing for a specific service or product?",
-                "Would you like to know about regular pricing or any current promotions?",
-            ],
-            'keywords': ['price', 'cost', 'fee', 'expensive', 'cheap', 'rate']
-        },
-        'timing': {
-            'questions': [
-                "Which day of the week are you interested in?",
-                "Is this for a specific date or in general?"
-            ],
-            'keywords': ['hour', 'time', 'schedule', 'when', 'open']
-        },
-        'location': {
-            'questions': [
-                "Are you looking for our physical address or directions?",
-                "Which location are you interested in?"
-            ],
-            'keywords': ['where', 'location', 'address', 'find']
-        },
-        'process': {
-            'questions': [
-                "Do you need step-by-step instructions or just an overview?",
-                "Are you at a specific step or starting from the beginning?"
-            ],
-            'keywords': ['how', 'apply', 'register', 'process', 'step']
-        },
-    }
-
-    @staticmethod
-    def analyze_query_completeness(query: str) -> Dict[str, Any]:
-        """Analyze if query needs clarification."""
-        query_lower = query.lower()
-        words = query_lower.split()
-
-        analysis = {
-            'is_complete': True,
-            'issues': [],
-            'suggested_clarifications': [],
-            'confidence': 1.0
-        }
-
-        if len(words) < 3:
-            analysis['is_complete'] = False
-            analysis['issues'].append('too_short')
-            analysis['confidence'] *= 0.6
-
-        vague_pronouns = [w for w in words if w in ConversationalIntelligence.AMBIGUITY_PATTERNS['vague_pronouns']]
-        if vague_pronouns and len(words) < 8:
-            analysis['is_complete'] = False
-            analysis['issues'].append('vague_reference')
-            analysis['confidence'] *= 0.7
-
-        for pattern in ConversationalIntelligence.AMBIGUITY_PATTERNS['incomplete_questions']:
-            if pattern in query_lower:
-                analysis['is_complete'] = False
-                analysis['issues'].append('incomplete_question')
-                analysis['confidence'] *= 0.5
-                break
-
-        for topic, data in ConversationalIntelligence.CLARIFICATION_STRATEGIES.items():
-            if any(kw in query_lower for kw in data['keywords']):
-                if len(words) < 6 or any(issue in analysis['issues'] for issue in ['too_short', 'vague_reference']):
-                    analysis['suggested_clarifications'].extend(data['questions'][:1])
-
-        return analysis
-
-    @staticmethod
-    def detect_follow_up_opportunity(query: str, answer: str, documents: List[Dict[str, Any]]) -> Optional[str]:
-        """Detect if we should suggest a follow-up question."""
-        query_lower = query.lower()
-        answer_lower = answer.lower()
-
-        # Don't suggest follow-ups if user is taking action
-        action_keywords = ['book', 'schedule', 'register', 'sign up', 'demo', 'appointment', 'buy', 'purchase']
-        if any(keyword in query_lower for keyword in action_keywords):
-            return None
-
-        if 'option' in answer_lower or 'either' in answer_lower:
-            return "Would you like more details about any specific option?"
-
-        if any(word in answer_lower for word in ['various', 'different', 'multiple', 'several']):
-            return "Would you like me to explain any of these in more detail?"
-
-        if any(word in answer_lower for word in ['require', 'need to', 'must', 'step']):
-            return "Would you like me to walk you through these in detail?"
-
-        return None
-
-    @staticmethod
-    def generate_probing_questions(query: str, context: str, intent: str) -> List[str]:
-        """Generate smart, context-aware probing questions."""
-        questions = []
-        context_lower = context.lower()
-        query_lower = query.lower()
-
-        # Don't suggest if user is taking action
-        action_keywords = ['book', 'schedule', 'register', 'sign up', 'demo', 'appointment', 'buy', 'purchase', 'contact', 'call', 'email']
-        if any(keyword in query_lower for keyword in action_keywords):
-            return []
-
-        # Don't suggest info that was just discussed
-        recent_topics = ['hour', 'schedule', 'location', 'address', 'contact', 'price', 'cost', 'phone', 'email']
-        if any(topic in query_lower for topic in recent_topics):
-            return []
-
-        # Check available context
-        has_pricing = any(word in context_lower for word in ['price', 'cost', '$', 'fee', 'payment'])
-        has_timing = any(word in context_lower for word in ['hour', 'schedule', 'monday', 'tuesday'])
-        has_location = any(word in context_lower for word in ['address', 'location', 'street', 'building'])
-
-        # Only suggest if contextually relevant
-        if has_pricing and intent not in ['pricing', 'contact', 'timing'] and 'pricing' not in query_lower:
-            if any(word in query_lower for word in ['service', 'product', 'offer', 'what', 'about', 'feature']):
-                questions.append("Would you like to know about pricing?")
-
-        if has_timing and intent != 'timing' and 'hour' not in query_lower:
-            if any(word in query_lower for word in ['visit', 'come', 'available', 'when']):
-                questions.append("Would you like to know about our hours?")
-
-        if has_location and intent not in ['contact', 'location'] and 'location' not in query_lower:
-            if any(word in query_lower for word in ['visit', 'come', 'see', 'where']):
-                questions.append("Need our location information?")
-
-        return questions[:1]  # Max 1 suggestion
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -223,7 +69,7 @@ class QueryProcessor:
 
     INTENT_PATTERNS = {
         'contact': ['contact', 'phone', 'email', 'reach', 'call', 'address', 'location'],
-        'pricing': ['price', 'cost', 'fee', 'charge', 'expensive', 'cheap', 'rate'],
+        'pricing': ['price', 'cost', 'fee', 'charge', 'expensive', 'cheap', 'rate', 'scholarship', 'tuition'],
         'timing': ['hour', 'time', 'schedule', 'when', 'open', 'close', 'timing'],
         'process': ['how', 'apply', 'register', 'enroll', 'signup', 'process', 'step'],
         'information': ['what', 'about', 'tell', 'describe', 'explain', 'information'],
@@ -346,17 +192,14 @@ class HybridRetriever:
 # ──────────────────────────────────────────────────────────────────────────────
 
 class InteractiveRAGChatbot:
-    """Interactive RAG chatbot with conversational intelligence."""
+    """Interactive RAG chatbot with structure-aware prompts."""
 
     def __init__(self, client_id: str):
         self.client_id = client_id
         self.retriever = HybridRetriever(client_id)
         self.groq_client = _get_groq_client()
         self.conversation_history = []
-        self.conversational_ai = ConversationalIntelligence()
         self.client_metadata = self._load_client_metadata()
-        self.active_form: Optional[FormCollector] = None
-        self.form_templates = self._load_form_templates()
 
     def _load_client_metadata(self) -> Dict[str, Any]:
         metadata_path = os.path.join(CLIENT_DATA_DIR, self.client_id, "metadata.json")
@@ -367,104 +210,125 @@ class InteractiveRAGChatbot:
             except:
                 pass
         return {"domain": "general", "business_type": "organization", "tone": "professional and helpful"}
-        
-    def _load_form_templates(self) -> Dict[str, Any]:
-        """Load form templates for this client"""
-        return {
-            'demo_booking': FormTemplate.get_demo_booking_form(),
-            'contact': FormTemplate.get_contact_form(),
-        }
-    
-    def _build_context_string(self, documents: List[Dict[str, Any]], max_tokens: int = 3000) -> str:
+
+    def _build_context_string(self, documents: List[Dict[str, Any]], max_tokens: int = 3500) -> str:
+        """Build context string with structure awareness."""
         context_parts = []
         total_chars = 0
         max_chars = max_tokens * 4
+
+        # Prioritize table content for financial queries
+        has_tables = any(doc['metadata'].get('contains_table', False) for doc in documents)
+
         for doc in documents:
             content = doc['content'].strip()
             meta = doc['metadata']
+
+            # Build source info
             source_info = ""
             if meta.get('source') == 'crawl':
                 source_info = f"[Source: {meta.get('title', 'Web Page')}]"
+                if meta.get('content_type') == 'table':
+                    source_info += " [STRUCTURED TABLE DATA]"
             elif meta.get('source') == 'pdf':
                 source_info = f"[Source: {meta.get('filename', 'PDF')}]"
             elif meta.get('source') == 'qa':
                 source_info = "[Source: Official Q&A]"
+
             doc_text = f"{source_info}\n{content}\n"
+
             if total_chars + len(doc_text) > max_chars:
                 remaining = max_chars - total_chars
                 if remaining > 200:
                     context_parts.append(doc_text[:remaining] + "...")
                 break
+
             context_parts.append(doc_text)
             total_chars += len(doc_text)
+
         return "\n---\n".join(context_parts)
 
-    def _create_interactive_prompt(self, query: str, context: str, intent: str, is_clarification_needed: bool = False) -> str:
+    def _create_structure_aware_prompt(self, query: str, context: str, intent: str) -> str:
+        """Create prompt with special instructions for structured data."""
         tone = self.client_metadata.get("tone", "professional and helpful")
         business_type = self.client_metadata.get("business_type", "organization")
 
-        interactive_instruction = """
-6. Be conversational and natural - suggest related questions if relevant.
-7. If the question is vague, briefly answer what you can then ask for clarification.""" if is_clarification_needed else """
-6. Be conversational and helpful in your responses."""
+        # Detect if context contains tables
+        has_tables = '|' in context and context.count('|') > 5
+        has_pricing = any(word in context.lower() for word in ['scholarship', 'fee', 'tuition', 'price', 'cost'])
 
-        return f"""You are an intelligent assistant for a {business_type}. Provide accurate information AND engage naturally with users.
+        table_instructions = ""
+        if has_tables:
+            table_instructions = """
+
+CRITICAL INSTRUCTIONS FOR TABLE DATA:
+- The context contains MARKDOWN TABLES with columns separated by |
+- Each column has a specific meaning - pay attention to column headers
+- When you see numbers in different columns, they represent DIFFERENT values
+- For pricing/financial tables:
+  * "Scholarship Amount" or similar columns show DISCOUNTS (amount deducted)
+  * "Fee After Scholarship" or similar columns show ACTUAL AMOUNT TO PAY
+  * Always clarify which number represents what
+- Read the "Table Context" and "Important Note" sections carefully
+- If a table has explanatory notes, include that information in your answer"""
+
+        if has_pricing and has_tables:
+            table_instructions += """
+- **IMPORTANT**: When discussing scholarships/fees, always explain:
+  1. What is the scholarship/discount amount
+  2. What is the final amount the person pays
+  3. The relationship between these numbers"""
+
+        return f"""You are an intelligent assistant for a {business_type}. You excel at understanding structured data like tables and lists.
 
 CONTEXT:
 {context}
+{table_instructions}
 
 GUIDELINES:
 1. Answer using the context above
-2. Be specific with details (numbers, dates, names)
-3. Use a {tone} tone
-4. Keep answers concise (2-4 sentences) unless more detail is needed
-5. If context is incomplete, provide what you can
-{interactive_instruction}
+2. When the context contains tables, carefully read column headers to understand what each value represents
+3. Be specific with details (numbers, dates, names) and always clarify what each number means
+4. Use a {tone} tone
+5. Keep answers concise (2-4 sentences) unless detail is needed
+6. If you see related columns in a table, explain the relationship between values
+7. Always use the most recent and specific information from the context
 
 USER QUESTION: {query}
 
 ANSWER:"""
 
-    def chat(self, query: str, include_history: bool = True, max_history: int = 3, enable_clarifications: bool = True) -> Dict[str, Any]:
+    def chat(self, query: str, include_history: bool = True, max_history: int = 3) -> Dict[str, Any]:
+        """Main chat method with structure-aware processing."""
         if not query or not query.strip():
-            return {"answer": "I'm here to help! What would you like to know?", "confidence": "none", "sources": [], "type": "prompt", "probing_questions": []}
+            return {
+                "answer": "I'm here to help! What would you like to know?",
+                "confidence": "none",
+                "sources": [],
+                "type": "prompt"
+            }
 
-        if self.active_form and self.active_form.status == FormStatus.IN_PROGRESS:
-                return self._handle_form_response(query)
-        
-        form_type = self._detect_form_intent(query)
-        if form_type:
-            return self._initiate_form(form_type)
         start_time = datetime.now()
-        needs_clarification = False
-        clarification_questions = []
 
-        if enable_clarifications:
-            completeness = self.conversational_ai.analyze_query_completeness(query)
-            if not completeness['is_complete'] and completeness['confidence'] < 0.7:
-                needs_clarification = True
-                clarification_questions = completeness['suggested_clarifications']
-
-        # Check custom Q&A
+        # Check custom Q&A first
         custom_match = self.retriever.match_custom_qa(query)
         if custom_match and custom_match['confidence'] == 'high':
-            follow_up = self.conversational_ai.detect_follow_up_opportunity(query, custom_match['answer'], [])
             response = {
                 "answer": custom_match['answer'],
                 "confidence": custom_match['confidence'],
                 "sources": [{"type": "custom_qa", "title": "Official Q&A"}],
                 "type": "custom_qa",
-                "processing_time": (datetime.now() - start_time).total_seconds(),
-                "follow_up_question": follow_up,
-                "probing_questions": [],
-                "clarification_questions": []
+                "processing_time": (datetime.now() - start_time).total_seconds()
             }
             self._update_history(query, response['answer'])
             return response
 
         # Retrieve documents
         intent = self.retriever.query_processor.detect_intent(query)
-        documents = self.retriever.retrieve_documents(query, top_k=12)
+
+        # Increase top_k for pricing/table queries
+        top_k = 15 if intent == 'pricing' else 12
+        documents = self.retriever.retrieve_documents(query, top_k=top_k)
 
         if not documents:
             return {
@@ -472,27 +336,24 @@ ANSWER:"""
                 "confidence": "none",
                 "sources": [],
                 "type": "no_results",
-                "clarification_questions": ["What specific information are you looking for?"],
-                "probing_questions": [],
                 "processing_time": (datetime.now() - start_time).total_seconds()
             }
 
         # Build context
         context = self._build_context_string(documents)
+
         if include_history and self.conversation_history:
             history_context = self._format_history(max_history)
             context = f"{history_context}\n\n---\n\nCURRENT CONTEXT:\n{context}"
 
-        # Generate probing questions
-        probing_questions = self.conversational_ai.generate_probing_questions(query, context, intent)
+        # Generate response with structure-aware prompt
+        prompt = self._create_structure_aware_prompt(query, context, intent)
 
-        # Generate response
-        prompt = self._create_interactive_prompt(query, context, intent, needs_clarification)
         try:
             completion = self.groq_client.chat.completions.create(
                 model=GROQ_MODEL,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
+                temperature=0.2,  # Lower temperature for more precise answers
                 top_p=0.9,
                 max_tokens=600,
                 stream=False
@@ -505,20 +366,23 @@ ANSWER:"""
                 "sources": [],
                 "type": "llm_error",
                 "error": str(e),
-                "probing_questions": [],
-                "clarification_questions": [],
                 "processing_time": (datetime.now() - start_time).total_seconds()
             }
 
         confidence = self._estimate_confidence(documents, answer)
-        follow_up = self.conversational_ai.detect_follow_up_opportunity(query, answer, documents)
 
+        # Build sources
         sources = []
         for doc in documents[:5]:
             meta = doc['metadata']
             source_info = {"score": doc['score']}
             if meta.get('source') == 'crawl':
-                source_info.update({"type": "webpage", "title": meta.get('title', 'Web Page'), "url": meta.get('url', '')})
+                source_info.update({
+                    "type": "webpage",
+                    "title": meta.get('title', 'Web Page'),
+                    "url": meta.get('url', ''),
+                    "is_structured": meta.get('is_structured', False)
+                })
             elif meta.get('source') == 'pdf':
                 source_info.update({"type": "document", "title": meta.get('filename', 'PDF')})
             elif meta.get('source') == 'qa':
@@ -531,38 +395,50 @@ ANSWER:"""
             "sources": sources,
             "type": "rag",
             "processing_time": (datetime.now() - start_time).total_seconds(),
-            "clarification_questions": clarification_questions,
-            "follow_up_question": follow_up,
-            "probing_questions": probing_questions,
-            "metadata": {"intent": intent, "num_documents": len(documents)}
+            "metadata": {
+                "intent": intent,
+                "num_documents": len(documents),
+                "has_structured_data": any(s.get('is_structured') for s in sources)
+            }
         }
 
         self._update_history(query, answer)
         return response
 
     def _estimate_confidence(self, documents: List[Dict[str, Any]], answer: str) -> str:
+        """Estimate response confidence."""
         if not documents:
             return "none"
+
         avg_score = sum(d['score'] for d in documents[:5]) / min(len(documents), 5)
+
         uncertainty_phrases = ["don't have", "not sure", "unclear", "may vary", "recommend contacting"]
         has_uncertainty = any(phrase in answer.lower() for phrase in uncertainty_phrases)
-        asks_clarification = "?" in answer and any(word in answer.lower() for word in ["which", "what", "would you"])
-        if asks_clarification:
-            return "medium"
-        elif has_uncertainty:
+
+        # Higher confidence for structured data answers
+        has_structured = any(d['metadata'].get('is_structured', False) for d in documents[:3])
+
+        if has_uncertainty:
             return "low"
         elif avg_score >= 0.75 and len(documents) >= 3:
-            return "high"
+            return "high" if has_structured else "medium"
         elif avg_score >= 0.60:
             return "medium"
+
         return "low"
 
     def _update_history(self, query: str, answer: str, max_history: int = 10):
-        self.conversation_history.append({"query": query, "answer": answer, "timestamp": datetime.now().isoformat()})
+        """Update conversation history."""
+        self.conversation_history.append({
+            "query": query,
+            "answer": answer,
+            "timestamp": datetime.now().isoformat()
+        })
         if len(self.conversation_history) > max_history:
             self.conversation_history = self.conversation_history[-max_history:]
 
     def _format_history(self, max_turns: int = 3) -> str:
+        """Format recent conversation history."""
         if not self.conversation_history:
             return ""
         recent = self.conversation_history[-max_turns:]
@@ -573,136 +449,34 @@ ANSWER:"""
         return "\n".join(history_lines)
 
     def clear_history(self):
+        """Clear conversation history."""
         self.conversation_history = []
 
     def get_conversation_summary(self) -> Dict[str, Any]:
+        """Get conversation summary."""
         if not self.conversation_history:
             return {"total_turns": 0, "topics_discussed": [], "last_interaction": None}
+
         all_queries = " ".join([turn['query'] for turn in self.conversation_history])
         intent_counts = {}
         for intent, keywords in QueryProcessor.INTENT_PATTERNS.items():
             count = sum(1 for kw in keywords if kw in all_queries.lower())
             if count > 0:
                 intent_counts[intent] = count
+
         return {
             "total_turns": len(self.conversation_history),
             "topics_discussed": list(intent_counts.keys()),
             "last_interaction": self.conversation_history[-1]['timestamp']
         }
 
-    def _detect_form_intent(self, query: str) -> Optional[str]:
-        """Detect if user wants to start a form"""
-        query_lower = query.lower()
-        
-        intent_patterns = {
-            'demo_booking': [
-                'book demo', 'schedule demo', 'request demo',
-                'want a demo', 'show me demo', 'demo please',
-                'book a call', 'schedule call', 'request a demo',
-                'sign up for demo', 'get a demo'
-            ],
-            'contact': [
-                'contact you', 'get in touch', 'reach out',
-                'talk to someone', 'speak to team', 'contact us',
-                'email you', 'call you', 'message you'
-            ],
-        }
-        
-        for form_type, keywords in intent_patterns.items():
-            if any(kw in query_lower for kw in keywords):
-                return form_type
-        
-        return None
-    
-    def _initiate_form(self, form_type: str) -> Dict[str, Any]:
-        """Start form collection"""
-        if form_type not in self.form_templates:
-            return {
-                "answer": "I'd be happy to help! Could you clarify what you need?",
-                "confidence": "low",
-                "type": "error",
-                "form_active": False
-            }
-        
-        template = self.form_templates[form_type]
-        self.active_form = FormCollector(template)
-        initial_prompt = self.active_form.start()
-        
-        self._update_history(
-            query=f"[Form Started: {form_type}]",
-            answer=initial_prompt
-        )
-        
-        return {
-            "answer": f"Great! I'll help you with that. Let me collect some information.\n\n{initial_prompt}",
-            "confidence": "high",
-            "type": "form_initiated",
-            "form_type": form_type,
-            "form_active": True,
-            "progress": f"0/{len(template.fields)}",
-            "sources": [],
-            "probing_questions": []
-        }
-    
-    def _handle_form_response(self, user_input: str) -> Dict[str, Any]:
-        """Process form field response"""
-        result = self.active_form.process_response(user_input)
-        
-        response = {
-            "answer": result["message"],
-            "confidence": "high",
-            "type": f"form_{result['status']}",
-            "form_active": not result.get("form_complete", False),
-            "sources": []
-        }
-        
-        if result.get("progress"):
-            response["progress"] = result["progress"]
-        
-        if result.get("form_complete"):
-            self._save_form_submission(result)
-            self._update_history(
-                query="[Form Completed]",
-                answer=result["message"]
-            )
-            self.active_form = None
-            response["probing_questions"] = ["Is there anything else you'd like to know?"]
-        else:
-            self._update_history(
-                query=user_input,
-                answer=result["message"]
-            )
-        
-        return response
-    
-    def _save_form_submission(self, result: Dict[str, Any]):
-        """Save completed form data"""
-        submission = {
-            "client_id": self.client_id,
-            "form_type": result["form_type"],
-            "data": result["collected_data"],
-            "timestamp": datetime.now().isoformat(),
-            "conversation_context": self.conversation_history[-3:] if self.conversation_history else []
-        }
-        
-        # Save to file
-        submissions_dir = os.path.join(CLIENT_DATA_DIR, self.client_id, "form_submissions")
-        os.makedirs(submissions_dir, exist_ok=True)
-        
-        filename = f"{result['form_type']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        filepath = os.path.join(submissions_dir, filename)
-        
-        try:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(submission, f, indent=2)
-            print(f"✅ Form submission saved: {filepath}")
-        except Exception as e:
-            print(f"⚠️ Error saving form submission: {e}")
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Public API & Session Management
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _get_or_create_session(client_id: str, session_id: Optional[str] = None) -> Tuple[InteractiveRAGChatbot, str]:
+    """Get or create chat session."""
     global _chatbot_sessions
     if session_id is None:
         session_id = f"{client_id}_{datetime.now().timestamp()}"
@@ -713,31 +487,24 @@ def _get_or_create_session(client_id: str, session_id: Optional[str] = None) -> 
         return _chatbot_sessions[session_key], session_id
 
 
-def chat_with_model(client_id: str, query: str, session_id: Optional[str] = None, include_history: bool = True, enable_clarifications: bool = True) -> Dict[str, Any]:
+
+def chat_with_model(
+    client_id: str,
+    query: str,
+    session_id: Optional[str] = None,
+    include_history: bool = True,
+    enable_clarifications: bool = True  # Kept for backward compatibility
+) -> Dict[str, Any]:
+    """Main chat interface."""
     chatbot, session_id = _get_or_create_session(client_id, session_id)
-    response = chatbot.chat(query, include_history=include_history, enable_clarifications=enable_clarifications)
+    response = chatbot.chat(query, include_history=include_history)
     response['session_id'] = session_id
-    if chatbot.active_form:
-        response['form_status'] = chatbot.active_form.status.value
     return response
 
 
-def explain_context(client_id: str, query: str) -> Dict[str, Any]:
-    retriever = HybridRetriever(client_id)
-    conv_ai = ConversationalIntelligence()
-    documents = retriever.retrieve_documents(query)
-    intent = retriever.query_processor.detect_intent(query)
-    completeness = conv_ai.analyze_query_completeness(query)
-    return {
-        "query": query,
-        "intent": intent,
-        "query_analysis": completeness,
-        "num_documents": len(documents),
-        "documents": [{"content": doc['content'][:200] + "...", "score": doc['score'], "metadata": doc['metadata']} for doc in documents]
-    }
-
 
 def get_conversation_state(client_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+    """Get conversation state."""
     if session_id:
         chatbot, _ = _get_or_create_session(client_id, session_id)
         return chatbot.get_conversation_summary()
@@ -745,6 +512,7 @@ def get_conversation_state(client_id: str, session_id: Optional[str] = None) -> 
 
 
 def reset_conversation(client_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+    """Reset conversation history."""
     global _chatbot_sessions
     if session_id:
         session_key = f"{client_id}:{session_id}"
@@ -756,6 +524,7 @@ def reset_conversation(client_id: str, session_id: Optional[str] = None) -> Dict
 
 
 def clear_session(client_id: str, session_id: str) -> Dict[str, Any]:
+    """Clear a specific session."""
     global _chatbot_sessions
     session_key = f"{client_id}:{session_id}"
     with _session_lock:
@@ -766,9 +535,11 @@ def clear_session(client_id: str, session_id: str) -> Dict[str, Any]:
 
 
 def cleanup_old_sessions(max_age_hours: int = 24) -> Dict[str, Any]:
+    """Clean up old inactive sessions."""
     global _chatbot_sessions
     current_time = datetime.now()
     removed_count = 0
+
     with _session_lock:
         sessions_to_remove = []
         for session_key, chatbot in _chatbot_sessions.items():
@@ -795,63 +566,40 @@ def cleanup_old_sessions(max_age_hours: int = 24) -> Dict[str, Any]:
 
 def explain_context(client_id: str, query: str) -> Dict[str, Any]:
     """
-    Debug function to see retrieved context and conversational analysis.
+    Debug function to see retrieved context and document analysis.
+    Useful for understanding what the RAG system is finding.
+
+    Args:
+        client_id: Client identifier
+        query: User query to analyze
 
     Returns:
-        Retrieved documents with scores, metadata, and conversational intelligence analysis
+        Retrieved documents with scores, metadata, and analysis
     """
     retriever = HybridRetriever(client_id)
-    conv_ai = ConversationalIntelligence()
-
-    documents = retriever.retrieve_documents(query)
+    documents = retriever.retrieve_documents(query, top_k=15)
     intent = retriever.query_processor.detect_intent(query)
-    completeness = conv_ai.analyze_query_completeness(query)
+
+    # Analyze retrieved documents
+    has_tables = any(doc['metadata'].get('contains_table', False) for doc in documents)
+    has_structured = any(doc['metadata'].get('is_structured', False) for doc in documents)
 
     return {
         "query": query,
         "intent": intent,
-        "query_analysis": completeness,
         "num_documents": len(documents),
+        "has_tables": has_tables,
+        "has_structured_data": has_structured,
         "documents": [
             {
-                "content": doc['content'][:200] + "..." if len(doc['content']) > 200 else doc['content'],
+                "content": doc['content'][:300] + "..." if len(doc['content']) > 300 else doc['content'],
                 "score": doc['score'],
                 "metadata": doc['metadata']
             }
-            for doc in documents
+            for doc in documents[:10]
         ]
     }
 
 
-# def get_conversation_state(client_id: str) -> Dict[str, Any]:
-#     """
-#     Get current conversation state and history summary.
-
-#     Returns:
-#         Conversation summary with topics, turns, and statistics
-#     """
-#     chatbot = InteractiveRAGChatbot(client_id)
-#     return chatbot.get_conversation_summary()
-
-
-# def reset_conversation(client_id: str) -> Dict[str, Any]:
-#     """
-#     Reset conversation history for a client.
-
-#     Returns:
-#         Confirmation message
-#     """
-#     chatbot = InteractiveRAGChatbot(client_id)
-#     chatbot.clear_history()
-#     return {
-#         "status": "success",
-#         "message": "Conversation history cleared"
-#     }
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Backward Compatibility
-# ──────────────────────────────────────────────────────────────────────────────
-
-# Alias for backward compatibility with existing imports
+# Backward compatibility
 UniversalRAGChatbot = InteractiveRAGChatbot

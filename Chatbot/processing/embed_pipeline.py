@@ -1,13 +1,13 @@
 """
-Enhanced Universal Embedding Pipeline with LangChain
-Works for any website with intelligent chunking and metadata preservation
+Enhanced Universal Embedding Pipeline with Structure Preservation
+Handles tables, lists, notes, and maintains semantic relationships
 """
 
 import os
 import sys
 import json
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from sentence_transformers import SentenceTransformer
 import chromadb
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -20,6 +20,152 @@ try:
 except LookupError:
     nltk.download('punkt_tab')
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Structured Content Processor
+# ──────────────────────────────────────────────────────────────────────────────
+
+class StructuredContentProcessor:
+    """Process structured content while maintaining semantic relationships."""
+
+    @staticmethod
+    def extract_structured_elements(content: str) -> Dict[str, Any]:
+        """
+        Extract structured elements (tables, lists, notes) from content.
+
+        Returns:
+            Dictionary with separated text, tables, lists, and notes
+        """
+        result = {
+            'main_text': '',
+            'tables': [],
+            'lists': [],
+            'notes': []
+        }
+
+        # Split content into sections
+        sections = content.split('='*50)
+
+        current_section = 'main'
+        text_parts = []
+
+        for section in sections:
+            section = section.strip()
+            if not section:
+                continue
+
+            # Detect section type
+            if 'STRUCTURED TABLES' in section:
+                current_section = 'tables'
+                # Extract tables
+                table_blocks = re.split(r'\n\n(?=\|)', section)
+                for block in table_blocks[1:]:  # Skip header
+                    if block.strip().startswith('|'):
+                        # Extract context
+                        context_match = re.search(r'\*\*Context:\*\*\s*(.+?)(?=\n\|)', block)
+                        note_match = re.search(r'\*\*Note:\*\*\s*(.+?)$', block, re.MULTILINE)
+
+                        table_text = '\n'.join([line for line in block.split('\n') if line.strip().startswith('|')])
+
+                        result['tables'].append({
+                            'context': context_match.group(1).strip() if context_match else '',
+                            'content': table_text,
+                            'note': note_match.group(1).strip() if note_match else ''
+                        })
+
+            elif 'IMPORTANT LISTS' in section:
+                current_section = 'lists'
+                # Extract lists
+                list_blocks = section.split('\n\n')
+                current_list = None
+                for block in list_blocks[1:]:
+                    if block.strip().startswith('**') and block.strip().endswith('**'):
+                        # Context for list
+                        if current_list:
+                            result['lists'].append(current_list)
+                        current_list = {
+                            'context': block.strip('*').strip(),
+                            'items': []
+                        }
+                    elif block.strip() and (block.strip()[0].isdigit() or block.strip().startswith('-')):
+                        if current_list:
+                            items = [item.strip() for item in block.split('\n') if item.strip()]
+                            current_list['items'].extend(items)
+                if current_list:
+                    result['lists'].append(current_list)
+
+            elif 'IMPORTANT NOTES' in section:
+                current_section = 'notes'
+                # Extract notes
+                note_lines = [line.strip() for line in section.split('\n') if line.strip() and not line.strip() == 'IMPORTANT NOTES']
+                # Remove numbering
+                notes = [re.sub(r'^\d+\.\s*', '', note) for note in note_lines if note]
+                result['notes'] = notes
+
+            elif current_section == 'main':
+                text_parts.append(section)
+
+        result['main_text'] = '\n\n'.join(text_parts).strip()
+
+        return result
+
+    @staticmethod
+    def create_table_document(table: Dict[str, str], base_metadata: Dict) -> Optional[Document]:
+        """Create a document for a table with rich context."""
+        if not table['content']:
+            return None
+
+        # Build comprehensive table representation
+        parts = []
+
+        if table['context']:
+            parts.append(f"Table Context: {table['context']}")
+
+        parts.append("Table Data:")
+        parts.append(table['content'])
+
+        if table['note']:
+            parts.append(f"\nImportant Note: {table['note']}")
+
+        content = '\n'.join(parts)
+
+        # Create metadata
+        metadata = base_metadata.copy()
+        metadata.update({
+            'content_type': 'table',
+            'has_context': bool(table['context']),
+            'has_note': bool(table['note']),
+            'is_structured': True
+        })
+
+        return Document(page_content=content, metadata=metadata)
+
+    @staticmethod
+    def create_list_document(lst: Dict[str, Any], base_metadata: Dict) -> Optional[Document]:
+        """Create a document for a list with context."""
+        if not lst['items']:
+            return None
+
+        parts = []
+
+        if lst['context']:
+            parts.append(f"List Topic: {lst['context']}")
+
+        parts.append("Items:")
+        parts.extend(lst['items'])
+
+        content = '\n'.join(parts)
+
+        metadata = base_metadata.copy()
+        metadata.update({
+            'content_type': 'list',
+            'num_items': len(lst['items']),
+            'is_structured': True
+        })
+
+        return Document(page_content=content, metadata=metadata)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Advanced Text Processing
 # ──────────────────────────────────────────────────────────────────────────────
@@ -30,31 +176,21 @@ class SmartTextCleaner:
     @staticmethod
     def clean_text(text: str, preserve_structure: bool = True) -> str:
         """Clean text while preserving important structure."""
-
-        # Remove excessive whitespace but preserve paragraph breaks
         if preserve_structure:
-            # Preserve double newlines (paragraph breaks)
             text = re.sub(r'\n{3,}', '\n\n', text)
-            # Normalize single line breaks to spaces
             text = re.sub(r'(?<!\n)\n(?!\n)', ' ', text)
 
-        # Remove very long numbers (IDs, not meaningful data)
         text = re.sub(r'\b\d{15,}\b', '', text)
-
-        # Clean up excessive punctuation
         text = re.sub(r'([.!?]){3,}', r'\1', text)
-
-        # Normalize spaces
         text = re.sub(r' +', ' ', text)
 
-        # Remove noise patterns common in web scraping
         noise_patterns = [
             r'Skip to (main )?content',
             r'Cookie (Policy|Notice|Consent)',
             r'Accept (all )?cookies',
             r'JavaScript (is )?(disabled|required)',
             r'Loading\.\.\.+',
-            r'\[.*?\](\s*\[.*?\])+',  # Multiple empty brackets
+            r'\[.*?\](\s*\[.*?\])+',
         ]
 
         for pattern in noise_patterns:
@@ -67,34 +203,36 @@ class SmartTextCleaner:
         """Extract useful metadata from text for better retrieval."""
         metadata = {}
 
-        # Detect if text contains contact information
         if re.search(r'\b[\w\.-]+@[\w\.-]+\.\w+\b', text):
             metadata['contains_contact'] = True
 
-        # Detect pricing information
-        if re.search(r'[\$€£¥₹]\s*\d+|price|cost|fee', text, re.IGNORECASE):
+        # Enhanced financial detection
+        if re.search(r'[\$€£¥₹]\s*\d+|price|cost|fee|scholarship|tuition', text, re.IGNORECASE):
             metadata['contains_pricing'] = True
 
-        # Detect timing/schedule information
+        # Detect table content
+        if re.search(r'\|.*\|.*\|', text):
+            metadata['contains_table'] = True
+
         if re.search(r'\d{1,2}:\d{2}|hours?|schedule|timing', text, re.IGNORECASE):
             metadata['contains_timing'] = True
 
-        # Detect location information
         if re.search(r'address|location|street|city', text, re.IGNORECASE):
             metadata['contains_location'] = True
 
         return metadata
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Smart Chunker
+# ──────────────────────────────────────────────────────────────────────────────
+
 class UniversalChunker:
-    """
-    Universal document chunker that adapts to content type.
-    Uses LangChain's RecursiveCharacterTextSplitter with smart separators.
-    """
+    """Universal document chunker with special handling for structured content."""
 
     def __init__(
         self,
-        chunk_size: int = 500,
+        chunk_size: int = 600,  # Increased for tables
         chunk_overlap: int = 100,
         min_chunk_size: int = 50
     ):
@@ -102,18 +240,17 @@ class UniversalChunker:
         self.chunk_overlap = chunk_overlap
         self.min_chunk_size = min_chunk_size
 
-        # Smart separators that preserve semantic boundaries
         self.separators = [
-            "\n\n\n",  # Major section breaks
-            "\n\n",    # Paragraph breaks
-            "\n",      # Line breaks
-            ". ",      # Sentence endings
-            "! ",      # Exclamations
-            "? ",      # Questions
-            "; ",      # Semi-colons
-            ", ",      # Commas
-            " ",       # Words
-            ""         # Characters
+            "\n\n\n",
+            "\n\n",
+            "\n",
+            ". ",
+            "! ",
+            "? ",
+            "; ",
+            ", ",
+            " ",
+            ""
         ]
 
     def chunk_document(
@@ -121,56 +258,53 @@ class UniversalChunker:
         text: str,
         metadata: Dict[str, Any] = None
     ) -> List[Document]:
-        """
-        Chunk document intelligently based on content structure.
-
-        Returns LangChain Document objects with rich metadata.
-        """
+        """Chunk document intelligently based on content structure."""
         if not text or len(text.strip()) < self.min_chunk_size:
             return []
 
-        # Detect document type and adjust chunking strategy
-        doc_type = self._detect_document_type(text)
+        # Detect if this is table content (needs special handling)
+        is_table = '|' in text and text.count('|') > 10
 
-        # Use different strategies based on document type
-        if doc_type == 'structured':
-            # Lists, tables, structured data - smaller chunks
-            chunk_size = self.chunk_size - 100
-            overlap = self.chunk_overlap - 20
-        elif doc_type == 'narrative':
-            # Stories, articles - larger chunks for context
-            chunk_size = self.chunk_size + 100
-            overlap = self.chunk_overlap + 30
+        if is_table:
+            # Tables: keep together if possible, don't split across rows
+            chunk_size = min(self.chunk_size * 2, 1200)  # Larger chunks for tables
+            overlap = 50
+            separators = ["\n|", "\n\n", "\n"]  # Split at row boundaries
         else:
-            chunk_size = self.chunk_size
-            overlap = self.chunk_overlap
+            doc_type = self._detect_document_type(text)
+            if doc_type == 'structured':
+                chunk_size = self.chunk_size - 100
+                overlap = self.chunk_overlap - 20
+            elif doc_type == 'narrative':
+                chunk_size = self.chunk_size + 100
+                overlap = self.chunk_overlap + 30
+            else:
+                chunk_size = self.chunk_size
+                overlap = self.chunk_overlap
+            separators = self.separators
 
-        # Create text splitter
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=overlap,
             length_function=len,
-            separators=self.separators,
+            separators=separators,
             keep_separator=True
         )
 
-        # Split text into chunks
         chunks = text_splitter.split_text(text)
 
-        # Create Document objects with metadata
         documents = []
         for i, chunk in enumerate(chunks):
-            # Skip chunks that are too small
             if len(chunk.strip()) < self.min_chunk_size:
                 continue
 
-            # Build chunk metadata
             chunk_metadata = metadata.copy() if metadata else {}
             chunk_metadata['chunk_index'] = i
             chunk_metadata['total_chunks'] = len(chunks)
-            chunk_metadata['doc_type'] = doc_type
 
-            # Extract chunk-specific metadata
+            if is_table:
+                chunk_metadata['contains_table'] = True
+
             chunk_info = SmartTextCleaner.extract_metadata(chunk)
             chunk_metadata.update(chunk_info)
 
@@ -184,16 +318,13 @@ class UniversalChunker:
     @staticmethod
     def _detect_document_type(text: str) -> str:
         """Detect document type to adapt chunking strategy."""
-        # Count structural elements
         list_items = len(re.findall(r'^\s*[-•*]\s', text, re.MULTILINE))
         numbered_items = len(re.findall(r'^\s*\d+[\.)]\s', text, re.MULTILINE))
         paragraphs = len(re.findall(r'\n\n', text))
 
-        # Structured document (lots of lists/numbered items)
         if list_items + numbered_items > 5:
             return 'structured'
 
-        # Narrative document (lots of paragraphs)
         if paragraphs > 3 and len(text) > 1000:
             return 'narrative'
 
@@ -205,9 +336,7 @@ class UniversalChunker:
 # ──────────────────────────────────────────────────────────────────────────────
 
 class UniversalEmbeddingPipeline:
-    """
-    Universal embedding pipeline that works for any website/document.
-    """
+    """Universal embedding pipeline with structure preservation."""
 
     def __init__(
         self,
@@ -219,12 +348,12 @@ class UniversalEmbeddingPipeline:
         self.model = None
         self.cleaner = SmartTextCleaner()
         self.chunker = UniversalChunker(
-            chunk_size=500,
+            chunk_size=600,
             chunk_overlap=100,
             min_chunk_size=50
         )
+        self.structure_processor = StructuredContentProcessor()
 
-        # Setup paths
         self._setup_paths()
 
     def _setup_paths(self):
@@ -235,7 +364,6 @@ class UniversalEmbeddingPipeline:
         self.client_dir = os.path.join(project_root, "client_data", self.client_id)
         self.chroma_dir = os.path.join(project_root, "ChromaDatabase", "vector-database", "chroma_db")
 
-        # Create directories
         os.makedirs(self.client_dir, exist_ok=True)
         os.makedirs(self.chroma_dir, exist_ok=True)
 
@@ -245,17 +373,12 @@ class UniversalEmbeddingPipeline:
             print(f"🔄 Loading embedding model: {self.embedding_model_name}")
             self.model = SentenceTransformer(self.embedding_model_name)
 
-    def process_website(self, max_pages: int = None) -> Dict[str, Any]:
-        """
-        Process website crawl data.
-
-        Returns processing statistics.
-        """
+    def process_website(self, max_pages: int = None) -> tuple[List[Document], Dict[str, Any]]:
+        """Process website crawl data with structure preservation."""
         print("\n" + "="*60)
-        print("🌐 Processing Website Content")
+        print("🌐 Processing Website Content (Structure-Aware)")
         print("="*60)
 
-        # Load website content
         content_path = os.path.join(self.client_dir, "website_content.json")
         if not os.path.exists(content_path):
             raise FileNotFoundError(f"Website content not found: {content_path}")
@@ -268,12 +391,14 @@ class UniversalEmbeddingPipeline:
 
         print(f"📄 Loaded {len(pages)} web pages")
 
-        # Process pages
         all_documents = []
         stats = {
             'total_pages': len(pages),
             'processed_pages': 0,
             'total_chunks': 0,
+            'tables_processed': 0,
+            'lists_processed': 0,
+            'notes_processed': 0,
             'skipped_pages': 0
         }
 
@@ -282,45 +407,112 @@ class UniversalEmbeddingPipeline:
             title = page.get('title', 'Untitled')
             content = page.get('content', '')
 
+            # Check for new structured data format
+            structured_data = page.get('structured_data', {})
+            page_metadata = page.get('metadata', {})
+
             if not content or len(content.strip()) < 100:
                 stats['skipped_pages'] += 1
                 continue
 
-            # Clean content
-            cleaned_content = self.cleaner.clean_text(content, preserve_structure=True)
-
-            # Create base metadata
+            # Base metadata
             base_metadata = {
                 'source': 'crawl',
                 'url': url,
                 'title': title,
-                'page_type': page.get('content_type', 'general')
+                'page_type': page_metadata.get('content_type', 'general'),
+                'has_tables': page_metadata.get('has_tables', False),
+                'has_lists': page_metadata.get('has_lists', False)
             }
 
-            # Chunk document
-            documents = self.chunker.chunk_document(cleaned_content, base_metadata)
+            # Process structured content if available
+            if structured_data:
+                # Process tables separately
+                tables = structured_data.get('tables', [])
+                for table_data in tables:
+                    table_doc = self.structure_processor.create_table_document(
+                        {
+                            'context': table_data.get('context_before', ''),
+                            'content': table_data.get('markdown', ''),
+                            'note': table_data.get('context_after', '')
+                        },
+                        base_metadata
+                    )
+                    if table_doc:
+                        all_documents.append(table_doc)
+                        stats['tables_processed'] += 1
 
-            if documents:
+                # Process lists separately
+                lists = structured_data.get('lists', [])
+                for list_data in lists:
+                    list_doc = self.structure_processor.create_list_document(
+                        {
+                            'context': list_data.get('context', ''),
+                            'items': list_data.get('items', [])
+                        },
+                        base_metadata
+                    )
+                    if list_doc:
+                        all_documents.append(list_doc)
+                        stats['lists_processed'] += 1
+
+                # Process notes
+                notes = structured_data.get('notes', [])
+                if notes:
+                    notes_content = "Important Information:\n\n" + "\n\n".join([f"• {note}" for note in notes])
+                    note_meta = base_metadata.copy()
+                    note_meta['content_type'] = 'notes'
+                    note_meta['is_structured'] = True
+
+                    all_documents.append(Document(
+                        page_content=notes_content,
+                        metadata=note_meta
+                    ))
+                    stats['notes_processed'] += len(notes)
+
+            # Extract and process structured elements from content string
+            structured = self.structure_processor.extract_structured_elements(content)
+
+            # Clean main text
+            main_text = self.cleaner.clean_text(structured['main_text'], preserve_structure=True)
+
+            if main_text:
+                # Chunk main text
+                documents = self.chunker.chunk_document(main_text, base_metadata)
                 all_documents.extend(documents)
+
+            # Process embedded tables (if not already in structured_data)
+            if not structured_data.get('tables') and structured['tables']:
+                for table in structured['tables']:
+                    table_doc = self.structure_processor.create_table_document(table, base_metadata)
+                    if table_doc:
+                        all_documents.append(table_doc)
+                        stats['tables_processed'] += 1
+
+            # Process embedded lists
+            if not structured_data.get('lists') and structured['lists']:
+                for lst in structured['lists']:
+                    list_doc = self.structure_processor.create_list_document(lst, base_metadata)
+                    if list_doc:
+                        all_documents.append(list_doc)
+                        stats['lists_processed'] += 1
+
+            if len(all_documents) > stats['total_chunks']:
                 stats['processed_pages'] += 1
-                stats['total_chunks'] += len(documents)
-                print(f"  ✅ {title[:50]}... → {len(documents)} chunks")
+                new_chunks = len(all_documents) - stats['total_chunks']
+                stats['total_chunks'] = len(all_documents)
+                print(f"  ✅ {title[:50]}... → {new_chunks} chunks (T:{stats['tables_processed']} L:{stats['lists_processed']})")
             else:
                 stats['skipped_pages'] += 1
 
         return all_documents, stats
 
     def process_pdf(self) -> tuple[List[Document], Dict[str, Any]]:
-        """
-        Process PDF document.
-
-        Returns documents and statistics.
-        """
+        """Process PDF document."""
         print("\n" + "="*60)
         print("📄 Processing PDF Content")
         print("="*60)
 
-        # Load PDF text
         pdf_text_path = os.path.join(self.client_dir, "custom_pdf.txt")
         if not os.path.exists(pdf_text_path):
             raise FileNotFoundError(f"PDF text not found: {pdf_text_path}")
@@ -328,23 +520,19 @@ class UniversalEmbeddingPipeline:
         with open(pdf_text_path, 'r', encoding='utf-8') as f:
             text = f.read()
 
-        # Get PDF filename
         pdf_path = os.path.join(self.client_dir, "custom_pdf.pdf")
         pdf_filename = os.path.basename(pdf_path) if os.path.exists(pdf_path) else "document.pdf"
 
         print(f"📄 Loaded PDF: {pdf_filename}")
 
-        # Clean text
         cleaned_text = self.cleaner.clean_text(text, preserve_structure=True)
 
-        # Create metadata
         metadata = {
             'source': 'pdf',
             'filename': pdf_filename,
             'title': f"PDF: {pdf_filename}"
         }
 
-        # Chunk document
         documents = self.chunker.chunk_document(cleaned_text, metadata)
 
         stats = {
@@ -359,11 +547,7 @@ class UniversalEmbeddingPipeline:
         return documents, stats
 
     def process_custom_qa(self) -> tuple[List[Document], Dict[str, Any]]:
-        """
-        Process custom Q&A pairs.
-
-        Returns documents and statistics.
-        """
+        """Process custom Q&A pairs."""
         qa_path = os.path.join(self.client_dir, "custom_qa.json")
 
         if not os.path.exists(qa_path):
@@ -379,7 +563,6 @@ class UniversalEmbeddingPipeline:
         documents = []
 
         for qa in qa_pairs:
-            # Handle both formats
             questions = qa.get('questions', [])
             if not questions and 'question' in qa:
                 questions = [qa['question']]
@@ -389,8 +572,6 @@ class UniversalEmbeddingPipeline:
             if not questions or not answer:
                 continue
 
-            # Create a document for each Q&A pair
-            # Format: Q: question\nA: answer
             for question in questions:
                 content = f"Q: {question}\nA: {answer}"
 
@@ -401,7 +582,6 @@ class UniversalEmbeddingPipeline:
                     'question': question
                 }
 
-                # Add any additional metadata from QA
                 if 'metadata' in qa:
                     metadata.update(qa['metadata'])
 
@@ -420,11 +600,7 @@ class UniversalEmbeddingPipeline:
         return documents, stats
 
     def embed_documents(self, documents: List[Document]) -> List[Dict[str, Any]]:
-        """
-        Generate embeddings for documents.
-
-        Returns list of dicts with content, metadata, and embeddings.
-        """
+        """Generate embeddings for documents."""
         if not documents:
             return []
 
@@ -432,17 +608,14 @@ class UniversalEmbeddingPipeline:
 
         print(f"\n🔄 Generating embeddings for {len(documents)} chunks...")
 
-        # Extract text content
         texts = [doc.page_content for doc in documents]
 
-        # Generate embeddings with progress bar
         embeddings = self.model.encode(
             texts,
             show_progress_bar=True,
             batch_size=32
         )
 
-        # Combine everything
         embedded_docs = []
         for doc, embedding in zip(documents, embeddings):
             embedded_docs.append({
@@ -454,19 +627,15 @@ class UniversalEmbeddingPipeline:
         return embedded_docs
 
     def store_in_chroma(self, embedded_docs: List[Dict[str, Any]], batch_size: int = 100):
-        """
-        Store embedded documents in ChromaDB with batching.
-        """
+        """Store embedded documents in ChromaDB with batching."""
         if not embedded_docs:
             print("⚠️ No documents to store")
             return
 
         print(f"\n📦 Storing {len(embedded_docs)} documents in ChromaDB...")
 
-        # Initialize ChromaDB
         client = chromadb.PersistentClient(path=self.chroma_dir)
 
-        # Delete existing collection
         collection_name = self.client_id.lower()
         try:
             client.delete_collection(name=collection_name)
@@ -474,13 +643,11 @@ class UniversalEmbeddingPipeline:
         except:
             pass
 
-        # Create new collection
         collection = client.get_or_create_collection(
             name=collection_name,
             metadata={"hnsw:space": "cosine"}
         )
 
-        # Add documents in batches
         total_docs = len(embedded_docs)
 
         for i in range(0, total_docs, batch_size):
@@ -511,7 +678,6 @@ class UniversalEmbeddingPipeline:
 
     def save_artifacts(self, all_documents: List[Document], embedded_docs: List[Dict[str, Any]]):
         """Save processing artifacts for debugging."""
-        # Save chunks (without embeddings for readability)
         chunks_path = os.path.join(self.client_dir, "chunks.json")
         chunks_data = [
             {
@@ -526,7 +692,6 @@ class UniversalEmbeddingPipeline:
 
         print(f"💾 Saved chunks to {chunks_path}")
 
-        # Save embeddings
         embeddings_path = os.path.join(self.client_dir, "embeddings.json")
         with open(embeddings_path, 'w', encoding='utf-8') as f:
             json.dump(embedded_docs, f, indent=2, ensure_ascii=False)
@@ -534,14 +699,9 @@ class UniversalEmbeddingPipeline:
         print(f"💾 Saved embeddings to {embeddings_path}")
 
     def run(self, source_type: str = 'crawl'):
-        """
-        Run complete pipeline.
-
-        Args:
-            source_type: 'crawl', 'pdf', or 'both'
-        """
+        """Run complete pipeline."""
         print("\n" + "="*60)
-        print(f"🚀 Starting Enhanced Embedding Pipeline")
+        print(f"🚀 Starting Enhanced Structure-Aware Embedding Pipeline")
         print(f"Client: {self.client_id}")
         print(f"Source: {source_type}")
         print("="*60)
@@ -549,7 +709,6 @@ class UniversalEmbeddingPipeline:
         all_documents = []
         total_stats = {}
 
-        # Process based on source type
         if source_type in ['crawl', 'both']:
             try:
                 docs, stats = self.process_website()
@@ -566,7 +725,6 @@ class UniversalEmbeddingPipeline:
             except FileNotFoundError as e:
                 print(f"⚠️ {e}")
 
-        # Always try to process custom Q&A
         try:
             docs, stats = self.process_custom_qa()
             all_documents.extend(docs)
@@ -579,16 +737,10 @@ class UniversalEmbeddingPipeline:
 
         print(f"\n📊 Total documents to embed: {len(all_documents)}")
 
-        # Generate embeddings
         embedded_docs = self.embed_documents(all_documents)
-
-        # Store in ChromaDB
         self.store_in_chroma(embedded_docs)
-
-        # Save artifacts
         self.save_artifacts(all_documents, embedded_docs)
 
-        # Print summary
         print("\n" + "="*60)
         print("✅ PIPELINE COMPLETE")
         print("="*60)
@@ -610,12 +762,9 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='Enhanced Universal Embedding Pipeline'
+        description='Enhanced Structure-Aware Embedding Pipeline'
     )
-    parser.add_argument(
-        'client_id',
-        help='Client identifier'
-    )
+    parser.add_argument('client_id', help='Client identifier')
     parser.add_argument(
         '--source',
         choices=['crawl', 'pdf', 'both'],
@@ -638,6 +787,8 @@ def main():
         pipeline.run(source_type=args.source)
     except Exception as e:
         print(f"\n❌ Pipeline failed: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 
