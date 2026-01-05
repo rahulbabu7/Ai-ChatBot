@@ -1,5 +1,6 @@
 """
-Enhanced Universal Web Scraper with Better Error Handling
+Enhanced Universal Web Scraper with Structure Preservation
+Preserves tables, lists, notes, and contextual relationships
 """
 
 import asyncio
@@ -10,13 +11,13 @@ import argparse
 import traceback
 from urllib.parse import urljoin, urlparse
 from playwright.async_api import async_playwright, Page, TimeoutError as PlaywrightTimeoutError
-from bs4 import BeautifulSoup
-from typing import List, Dict, Set, Optional
+from bs4 import BeautifulSoup, NavigableString
+from typing import List, Dict, Set, Optional, Tuple
 from datetime import datetime
 
 
-class IntelligentContentExtractor:
-    """Intelligent content extraction that adapts to different website structures."""
+class StructuredContentExtractor:
+    """Extracts content while preserving structure (tables, lists, notes)."""
 
     CONTENT_SELECTORS = [
         ('main', 'semantic_main'),
@@ -33,7 +34,7 @@ class IntelligentContentExtractor:
         ('.main-content', 'generic_main'),
         ('.page-content', 'generic_page'),
         ('#content', 'generic_content'),
-        ('.container', 'generic_container'),  # More generic fallback
+        ('.container', 'generic_container'),
     ]
 
     NOISE_SELECTORS = [
@@ -47,9 +48,8 @@ class IntelligentContentExtractor:
 
     @classmethod
     async def extract_content(cls, page: Page, url: str) -> Optional[Dict[str, any]]:
-        """Extract content using multiple strategies with fallback."""
+        """Extract content with structure preservation."""
         try:
-            # Get HTML
             html = await page.content()
             soup = BeautifulSoup(html, 'html.parser')
 
@@ -62,41 +62,65 @@ class IntelligentContentExtractor:
             title = await cls._extract_title(page, soup)
             meta_description = cls._extract_meta_description(soup)
 
-            # Try content extraction strategies
+            # Extract main content container
             main_content, strategy = cls._extract_main_content(soup)
 
             if not main_content:
                 print(f"⚠️  No main content found for {url}, using body fallback")
-                # Last resort: use body
                 main_content = soup.find('body')
                 strategy = 'fallback_body'
 
             if not main_content:
                 return None
 
-            # Extract structured data
-            headings = cls._extract_headings(soup)
-            plain_text = cls._clean_text(main_content.get_text())
+            # Extract structured elements
+            tables = cls._extract_tables_with_context(main_content)
+            lists = cls._extract_lists(main_content)
+            notes = cls._extract_notes(main_content)
+            headings = cls._extract_headings(main_content)
 
-            # Relaxed quality check - accept pages with at least 50 characters
-            if len(plain_text) < 50:
-                print(f"⚠️  Content too short ({len(plain_text)} chars) for {url}")
+            # Extract clean text (without tables/lists to avoid duplication)
+            text_content = cls._extract_text_content(main_content)
+
+            # Build comprehensive structured content
+            combined_content = cls._build_structured_content(
+                text_content, tables, lists, notes, headings
+            )
+
+            # Quality checks
+            if len(combined_content) < 100:
+                print(f"⚠️  Content too short ({len(combined_content)} chars) for {url}")
                 return None
 
-            # Detect page type
-            page_type = cls._detect_page_type(url, plain_text, soup)
-            content_quality = cls._assess_content_quality(plain_text, headings)
+            # Detect content characteristics
+            page_type = cls._detect_page_type(url, combined_content, soup)
+            content_quality = cls._assess_content_quality(combined_content, tables, lists, headings)
+            financial_info = cls._detect_financial_content(combined_content)
 
             return {
                 'url': url,
                 'title': title,
-                'content': plain_text,
+                'content': combined_content,
                 'meta_description': meta_description,
-                'headings': headings,
-                'extraction_strategy': strategy,
-                'content_type': page_type,
-                'word_count': len(plain_text.split()),
-                'quality_score': content_quality,
+                'structured_data': {
+                    'headings': headings,
+                    'tables': tables,
+                    'lists': lists,
+                    'notes': notes
+                },
+                'metadata': {
+                    'extraction_strategy': strategy,
+                    'content_type': page_type,
+                    'has_tables': len(tables) > 0,
+                    'num_tables': len(tables),
+                    'has_lists': len(lists) > 0,
+                    'num_lists': len(lists),
+                    'has_notes': len(notes) > 0,
+                    'num_notes': len(notes),
+                    'financial_info': financial_info,
+                    'word_count': len(combined_content.split()),
+                    'quality_score': content_quality,
+                },
                 'timestamp': datetime.now().isoformat()
             }
 
@@ -106,95 +130,217 @@ class IntelligentContentExtractor:
             return None
 
     @staticmethod
-    async def _extract_title(page: Page, soup: BeautifulSoup) -> str:
-        """Extract page title using multiple strategies."""
-        try:
-            # Try playwright's title
-            title = await page.title()
-            if title and len(title) > 3:
-                return title.strip()
-        except:
-            pass
+    def _extract_tables_with_context(content: BeautifulSoup) -> List[Dict[str, str]]:
+        """Extract tables in markdown format with surrounding context."""
+        tables_data = []
 
-        # Try h1
-        h1 = soup.find('h1')
-        if h1:
-            return h1.get_text().strip()
-
-        # Try og:title
-        og_title = soup.find('meta', property='og:title')
-        if og_title and og_title.get('content'):
-            return og_title['content'].strip()
-
-        # Try title tag
-        title_tag = soup.find('title')
-        if title_tag:
-            return title_tag.get_text().strip()
-
-        return "Untitled Page"
-
-    @staticmethod
-    def _extract_meta_description(soup: BeautifulSoup) -> str:
-        """Extract meta description."""
-        meta = soup.find('meta', attrs={'name': 'description'})
-        if meta and meta.get('content'):
-            return meta['content'].strip()
-
-        og_meta = soup.find('meta', attrs={'property': 'og:description'})
-        if og_meta and og_meta.get('content'):
-            return og_meta['content'].strip()
-
-        return ""
-
-    @classmethod
-    def _extract_main_content(cls, soup: BeautifulSoup) -> tuple[Optional[any], str]:
-        """Extract main content using priority-based selector matching."""
-        for selector, strategy in cls.CONTENT_SELECTORS:
+        for idx, table in enumerate(content.find_all('table'), 1):
             try:
-                elements = soup.select(selector)
-                best_element = None
-                max_length = 0
+                # Get context before table (heading or paragraph)
+                context_before = []
+                prev = table.find_previous(['h1', 'h2', 'h3', 'h4', 'p'])
+                if prev:
+                    text = prev.get_text().strip()
+                    if text and len(text) < 300:
+                        context_before.append(text)
 
-                for element in elements:
-                    text_length = len(element.get_text(strip=True))
-                    if text_length > max_length and text_length > 100:  # Lowered threshold
-                        max_length = text_length
-                        best_element = element
+                # Convert table to markdown
+                markdown_table = StructuredContentExtractor._table_to_markdown(table)
 
-                if best_element:
-                    return best_element, strategy
+                if not markdown_table:
+                    continue
+
+                # Get context after table (notes, captions)
+                context_after = []
+                next_elem = table.find_next(['p', 'caption', 'div'])
+                if next_elem:
+                    text = next_elem.get_text().strip()
+                    # Check if it's explanatory text (contains "note", starts with *, etc.)
+                    if text and len(text) < 300 and (
+                        'note' in text.lower()[:20] or
+                        text.startswith('*') or
+                        text.startswith('Note')
+                    ):
+                        context_after.append(text)
+
+                # Check for caption
+                caption = table.find('caption')
+                if caption:
+                    context_before.insert(0, caption.get_text().strip())
+
+                tables_data.append({
+                    'table_id': f'table_{idx}',
+                    'context_before': ' '.join(context_before),
+                    'markdown': markdown_table,
+                    'context_after': ' '.join(context_after),
+                    'num_rows': len(table.find_all('tr')),
+                    'num_cols': len(table.find('tr').find_all(['td', 'th'])) if table.find('tr') else 0
+                })
+
             except Exception as e:
-                print(f"⚠️  Selector '{selector}' failed: {e}")
+                print(f"⚠️  Table extraction error: {e}")
                 continue
 
-        # Fallback to body
-        body = soup.find('body')
-        if body:
-            return body, 'fallback_body'
-
-        return None, 'failed'
+        return tables_data
 
     @staticmethod
-    def _extract_headings(soup: BeautifulSoup, max_headings: int = 15) -> List[str]:
-        """Extract meaningful headings."""
+    def _table_to_markdown(table) -> str:
+        """Convert HTML table to markdown format."""
+        try:
+            rows = []
+
+            # Extract headers
+            headers = []
+            thead = table.find('thead')
+            if thead:
+                header_row = thead.find('tr')
+                if header_row:
+                    headers = [th.get_text().strip() for th in header_row.find_all(['th', 'td'])]
+
+            # If no thead, try first row
+            if not headers:
+                first_row = table.find('tr')
+                if first_row:
+                    headers = [th.get_text().strip() for th in first_row.find_all(['th', 'td'])]
+
+            if headers:
+                # Clean headers
+                headers = [h if h else f'Column_{i+1}' for i, h in enumerate(headers)]
+                rows.append('| ' + ' | '.join(headers) + ' |')
+                rows.append('| ' + ' | '.join(['---'] * len(headers)) + ' |')
+
+            # Extract data rows
+            tbody = table.find('tbody') or table
+            data_rows = tbody.find_all('tr')
+
+            # Skip first row if it was used as header
+            start_idx = 1 if not thead and headers else 0
+
+            for tr in data_rows[start_idx:]:
+                cells = [td.get_text().strip().replace('\n', ' ').replace('|', '\\|')
+                        for td in tr.find_all(['td', 'th'])]
+                if cells and any(cell for cell in cells):  # Skip empty rows
+                    # Pad cells if needed
+                    if headers and len(cells) < len(headers):
+                        cells.extend([''] * (len(headers) - len(cells)))
+                    rows.append('| ' + ' | '.join(cells) + ' |')
+
+            return '\n'.join(rows) if len(rows) > 2 else ''
+
+        except Exception as e:
+            print(f"⚠️  Markdown conversion error: {e}")
+            return ''
+
+    @staticmethod
+    def _extract_lists(content: BeautifulSoup) -> List[Dict[str, any]]:
+        """Extract ordered and unordered lists with context."""
+        lists_data = []
+
+        for idx, list_elem in enumerate(content.find_all(['ul', 'ol']), 1):
+            try:
+                # Skip if it's a navigation list
+                parent_classes = ' '.join(list_elem.get('class', []))
+                if any(nav in parent_classes.lower() for nav in ['nav', 'menu', 'breadcrumb']):
+                    continue
+
+                # Get preceding context
+                context = ""
+                prev = list_elem.find_previous(['h1', 'h2', 'h3', 'h4', 'p'])
+                if prev:
+                    text = prev.get_text().strip()
+                    if text and len(text) < 200:
+                        context = text
+
+                # Extract list items
+                items = []
+                for li in list_elem.find_all('li', recursive=False):
+                    item_text = li.get_text().strip()
+                    if item_text and len(item_text) > 2:
+                        items.append(item_text)
+
+                if items and len(items) >= 2:  # At least 2 items to be meaningful
+                    lists_data.append({
+                        'list_id': f'list_{idx}',
+                        'type': 'ordered' if list_elem.name == 'ol' else 'unordered',
+                        'context': context,
+                        'items': items,
+                        'num_items': len(items)
+                    })
+
+            except Exception as e:
+                print(f"⚠️  List extraction error: {e}")
+                continue
+
+        return lists_data
+
+    @staticmethod
+    def _extract_notes(content: BeautifulSoup) -> List[str]:
+        """Extract important notes, disclaimers, and caveats."""
+        notes = []
+        note_patterns = [
+            r'^\s*Note\s*\d*\s*:',
+            r'^\s*\*+\s*Note',
+            r'^\s*Important\s*:',
+            r'^\s*Disclaimer\s*:',
+            r'^\s*Please note',
+            r'^\s*\*\s*[A-Z]'  # Lines starting with * and capital letter
+        ]
+
+        # Find paragraphs or divs that look like notes
+        for elem in content.find_all(['p', 'div', 'span']):
+            text = elem.get_text().strip()
+
+            # Check if starts with note pattern
+            if any(re.match(pattern, text, re.IGNORECASE) for pattern in note_patterns):
+                if 20 < len(text) < 500:  # Reasonable note length
+                    notes.append(text)
+                    continue
+
+            # Check for note/important classes
+            classes = ' '.join(elem.get('class', [])).lower()
+            if any(keyword in classes for keyword in ['note', 'important', 'disclaimer', 'warning', 'alert']):
+                if text and 20 < len(text) < 500:
+                    notes.append(text)
+
+        # Deduplicate and limit
+        notes = list(dict.fromkeys(notes))[:10]
+        return notes
+
+    @staticmethod
+    def _extract_headings(content: BeautifulSoup, max_headings: int = 20) -> List[Dict[str, str]]:
+        """Extract headings with hierarchy."""
         headings = []
-        for tag in ['h1', 'h2', 'h3']:
-            for heading in soup.find_all(tag):
+        for tag in ['h1', 'h2', 'h3', 'h4']:
+            for heading in content.find_all(tag):
                 text = heading.get_text().strip()
                 if text and 3 < len(text) < 200:
                     if not any(noise in text.lower() for noise in ['menu', 'navigation', 'skip to']):
-                        headings.append(text)
+                        headings.append({
+                            'level': int(tag[1]),
+                            'text': text
+                        })
         return headings[:max_headings]
 
     @staticmethod
-    def _clean_text(text: str) -> str:
-        """Clean and normalize extracted text."""
+    def _extract_text_content(content: BeautifulSoup) -> str:
+        """Extract clean text while avoiding duplication of structured elements."""
+        # Clone content to avoid modifying original
+        content_copy = BeautifulSoup(str(content), 'html.parser')
+
+        # Remove tables and lists to avoid duplication
+        for elem in content_copy.find_all(['table', 'ul', 'ol']):
+            elem.decompose()
+
+        # Get text
+        text = content_copy.get_text()
+
+        # Clean text
         lines = text.split('\n')
         cleaned_lines = []
 
         for line in lines:
             line = re.sub(r'\s+', ' ', line).strip()
-            if len(line) >= 10:  # Lowered from 15
+            if len(line) >= 10:
                 if not re.match(r'^[\d\s\-\.\(\)]+$', line):
                     cleaned_lines.append(line)
 
@@ -218,6 +364,131 @@ class IntelligentContentExtractor:
         return text.strip()
 
     @staticmethod
+    def _build_structured_content(
+        text: str,
+        tables: List[Dict],
+        lists: List[Dict],
+        notes: List[str],
+        headings: List[Dict]
+    ) -> str:
+        """Combine all extracted content into a well-structured format."""
+        parts = []
+
+        # Main text content
+        if text:
+            parts.append(text)
+
+        # Add tables with context
+        if tables:
+            parts.append("\n\n" + "="*50)
+            parts.append("STRUCTURED TABLES")
+            parts.append("="*50)
+
+            for table in tables:
+                if table['context_before']:
+                    parts.append(f"\n**Context:** {table['context_before']}")
+
+                parts.append(f"\n{table['markdown']}")
+
+                if table['context_after']:
+                    parts.append(f"\n**Note:** {table['context_after']}")
+
+                parts.append("")  # Empty line between tables
+
+        # Add important lists
+        if lists:
+            parts.append("\n" + "="*50)
+            parts.append("IMPORTANT LISTS")
+            parts.append("="*50)
+
+            for lst in lists:
+                if lst['context']:
+                    parts.append(f"\n**{lst['context']}**")
+
+                marker = '1.' if lst['type'] == 'ordered' else '-'
+                for i, item in enumerate(lst['items'], 1):
+                    if lst['type'] == 'ordered':
+                        parts.append(f"{i}. {item}")
+                    else:
+                        parts.append(f"- {item}")
+                parts.append("")
+
+        # Add notes and disclaimers
+        if notes:
+            parts.append("\n" + "="*50)
+            parts.append("IMPORTANT NOTES")
+            parts.append("="*50)
+
+            for i, note in enumerate(notes, 1):
+                parts.append(f"\n{i}. {note}")
+
+        return '\n'.join(parts)
+
+    @staticmethod
+    async def _extract_title(page: Page, soup: BeautifulSoup) -> str:
+        """Extract page title using multiple strategies."""
+        try:
+            title = await page.title()
+            if title and len(title) > 3:
+                return title.strip()
+        except:
+            pass
+
+        h1 = soup.find('h1')
+        if h1:
+            return h1.get_text().strip()
+
+        og_title = soup.find('meta', property='og:title')
+        if og_title and og_title.get('content'):
+            return og_title['content'].strip()
+
+        title_tag = soup.find('title')
+        if title_tag:
+            return title_tag.get_text().strip()
+
+        return "Untitled Page"
+
+    @staticmethod
+    def _extract_meta_description(soup: BeautifulSoup) -> str:
+        """Extract meta description."""
+        meta = soup.find('meta', attrs={'name': 'description'})
+        if meta and meta.get('content'):
+            return meta['content'].strip()
+
+        og_meta = soup.find('meta', attrs={'property': 'og:description'})
+        if og_meta and og_meta.get('content'):
+            return og_meta['content'].strip()
+
+        return ""
+
+    @classmethod
+    def _extract_main_content(cls, soup: BeautifulSoup) -> Tuple[Optional[any], str]:
+        """Extract main content using priority-based selector matching."""
+        for selector, strategy in cls.CONTENT_SELECTORS:
+            try:
+                elements = soup.select(selector)
+                best_element = None
+                max_length = 0
+
+                for element in elements:
+                    text_length = len(element.get_text(strip=True))
+                    if text_length > max_length and text_length > 100:
+                        max_length = text_length
+                        best_element = element
+
+                if best_element:
+                    return best_element, strategy
+            except Exception as e:
+                print(f"⚠️  Selector '{selector}' failed: {e}")
+                continue
+
+        body = soup.find('body')
+        if body:
+            return body, 'fallback_body'
+
+        return None, 'failed'
+
+    @staticmethod
     def _detect_page_type(url: str, text: str, soup: BeautifulSoup) -> str:
         """Detect page type."""
         url_lower = url.lower()
@@ -230,8 +501,9 @@ class IntelligentContentExtractor:
             'contact': ['/contact', '/get-in-touch', '/reach-us'],
             'service': ['/service', '/services', '/what-we-do', '/solution'],
             'faq': ['/faq', '/help', '/support', '/questions'],
-            'pricing': ['/pricing', '/plans', '/packages'],
+            'pricing': ['/pricing', '/plans', '/packages', '/fees', '/scholarship'],
             'career': ['/career', '/jobs', '/hiring', '/join-us'],
+            'admission': ['/admission', '/admissions', '/apply', '/enroll'],
         }
 
         for page_type, patterns in url_patterns.items():
@@ -241,7 +513,7 @@ class IntelligentContentExtractor:
         if soup.find('form') and any(word in text_lower for word in ['email', 'message', 'contact']):
             return 'contact'
 
-        if re.search(r'\$\s*\d+|price|pricing|cost', text_lower):
+        if re.search(r'₹|Rs\.?\s*\d|price|pricing|cost|fee', text_lower):
             return 'pricing'
 
         if len(text.split()) > 500 and len(soup.find_all(['p'])) > 5:
@@ -250,28 +522,55 @@ class IntelligentContentExtractor:
         return 'general'
 
     @staticmethod
-    def _assess_content_quality(text: str, headings: List[str]) -> float:
+    def _assess_content_quality(
+        text: str,
+        tables: List[Dict],
+        lists: List[Dict],
+        headings: List[Dict]
+    ) -> float:
         """Assess content quality (0-1 score)."""
         score = 0.0
 
+        # Text content quality
         word_count = len(text.split())
-        if word_count > 50:  # Lowered threshold
-            score += min(word_count / 1000, 0.3)
+        if word_count > 50:
+            score += min(word_count / 1000, 0.25)
 
-        if len(headings) >= 1:  # Lowered from 2
-            score += 0.2
+        # Structured content bonus
+        if tables:
+            score += min(len(tables) * 0.15, 0.25)
 
+        if lists:
+            score += min(len(lists) * 0.05, 0.1)
+
+        # Headings
+        if headings:
+            score += min(len(headings) * 0.02, 0.15)
+
+        # Paragraphs
         paragraphs = text.split('\n\n')
-        if len(paragraphs) >= 2:  # Lowered from 3
-            score += 0.2
+        if len(paragraphs) >= 2:
+            score += 0.15
 
+        # Vocabulary diversity
         unique_words = len(set(text.lower().split()))
         total_words = len(text.split())
         if total_words > 0:
             uniqueness = unique_words / total_words
-            score += uniqueness * 0.3
+            score += uniqueness * 0.1
 
         return min(score, 1.0)
+
+    @staticmethod
+    def _detect_financial_content(text: str) -> Dict[str, bool]:
+        """Detect financial/pricing content."""
+        text_lower = text.lower()
+        return {
+            'has_pricing': bool(re.search(r'₹|rs\.?\s*\d|price|cost|fee|tuition', text_lower)),
+            'has_scholarships': bool(re.search(r'scholarship|discount|waiver|financial aid', text_lower)),
+            'has_calculations': bool(re.search(r'total|after|before|net|final|per year|per semester', text_lower)),
+            'has_tables': 'table' in text_lower or '|' in text,
+        }
 
 
 class SmartLinkExtractor:
@@ -289,7 +588,8 @@ class SmartLinkExtractor:
 
     PRIORITY_PATTERNS = [
         r'/about', r'/service', r'/product', r'/solution',
-        r'/pricing', r'/contact', r'/faq', r'/help'
+        r'/pricing', r'/contact', r'/faq', r'/help',
+        r'/admission', r'/scholarship', r'/fee'
     ]
 
     @classmethod
@@ -310,18 +610,14 @@ class SmartLinkExtractor:
 
                 parsed = urlparse(href)
 
-                # Must be same domain
                 if parsed.netloc and parsed.netloc != domain:
                     continue
 
-                # Remove anchor
                 clean_url = href.split('#')[0]
 
-                # Skip patterns
                 if any(re.search(pattern, clean_url.lower()) for pattern in cls.SKIP_PATTERNS):
                     continue
 
-                # Check if priority
                 is_priority = any(re.search(pattern, clean_url.lower()) for pattern in cls.PRIORITY_PATTERNS)
 
                 if is_priority:
@@ -329,7 +625,6 @@ class SmartLinkExtractor:
                 else:
                     valid_links.append(clean_url)
 
-            # Combine and deduplicate
             all_links = list(dict.fromkeys(priority_links + valid_links))
             return all_links[:30]
 
@@ -339,14 +634,14 @@ class SmartLinkExtractor:
 
 
 class UniversalWebScraper:
-    """Universal web scraper that adapts to any website structure."""
+    """Universal web scraper with structure preservation."""
 
     def __init__(
         self,
         start_url: str,
         output_file: str,
         max_pages: int = 50,
-        min_quality_score: float = 0.2  # Lowered from 0.3
+        min_quality_score: float = 0.2
     ):
         self.start_url = start_url
         self.output_file = output_file
@@ -364,10 +659,13 @@ class UniversalWebScraper:
             'low_quality': 0,
             'errors': 0,
             'avg_quality': 0.0,
+            'total_tables': 0,
+            'total_lists': 0,
+            'total_notes': 0,
             'error_details': []
         }
 
-        self.content_extractor = IntelligentContentExtractor()
+        self.content_extractor = StructuredContentExtractor()
         self.link_extractor = SmartLinkExtractor()
 
     async def scrape(self):
@@ -376,7 +674,6 @@ class UniversalWebScraper:
 
         try:
             async with async_playwright() as p:
-                # Launch browser with more permissive settings
                 browser = await p.chromium.launch(
                     headless=True,
                     args=[
@@ -396,7 +693,6 @@ class UniversalWebScraper:
 
                 self._print_header()
 
-                # Scraping loop
                 while self.queue and len(self.results) < self.max_pages:
                     url = self.queue.pop(0)
 
@@ -409,17 +705,15 @@ class UniversalWebScraper:
                     await self._scrape_page(context, url)
 
                 await browser.close()
-
-                # Save results
                 self._save_results()
 
-                return 0  # Success
+                return 0
 
         except Exception as e:
             print(f"\n❌ FATAL ERROR: {e}")
             traceback.print_exc()
-            self._save_results()  # Save whatever we got
-            return 1  # Failure
+            self._save_results()
+            return 1
 
     async def _scrape_page(self, context, url: str):
         """Scrape a single page with comprehensive error handling."""
@@ -427,28 +721,32 @@ class UniversalWebScraper:
         try:
             page = await context.new_page()
 
-            # Navigate with longer timeout
             print(f"🌐 Loading: {url}")
             await page.goto(url, wait_until='domcontentloaded', timeout=45000)
-
-            # Wait for content to load
             await page.wait_for_timeout(3000)
 
-            # Extract content
             content_data = await self.content_extractor.extract_content(page, url)
 
             if content_data:
-                quality_score = content_data.get('quality_score', 0)
+                quality_score = content_data['metadata']['quality_score']
 
                 if quality_score >= self.min_quality_score:
                     self.results.append(content_data)
                     self.stats['successful'] += 1
                     self.stats['avg_quality'] += quality_score
 
-                    print(f"✅ [{len(self.results)}/{self.max_pages}] {url}")
-                    print(f"   📝 {content_data['word_count']} words | Quality: {quality_score:.2f} | {content_data['content_type']}")
+                    # Update structure stats
+                    self.stats['total_tables'] += content_data['metadata']['num_tables']
+                    self.stats['total_lists'] += content_data['metadata']['num_lists']
+                    self.stats['total_notes'] += content_data['metadata']['num_notes']
 
-                    # Extract new links
+                    print(f"✅ [{len(self.results)}/{self.max_pages}] {url}")
+                    print(f"   📝 {content_data['metadata']['word_count']} words | "
+                          f"Quality: {quality_score:.2f} | "
+                          f"{content_data['metadata']['content_type']} | "
+                          f"Tables: {content_data['metadata']['num_tables']} | "
+                          f"Lists: {content_data['metadata']['num_lists']}")
+
                     new_links = await self.link_extractor.extract_links(page, url, self.domain)
                     for link in new_links:
                         if link not in self.visited_urls and link not in self.queue:
@@ -481,12 +779,7 @@ class UniversalWebScraper:
     def _print_header(self):
         """Print scraper header."""
         print("\n" + "="*70)
-        print("🚀 Enhanced Universal Web Scraper")
-        print("="*70)
-        print(f"🌐 Target: {self.start_url}")
-        print(f"📊 Domain: {self.domain}")
-        print(f"📄 Max pages: {self.max_pages}")
-        print(f"⭐ Min quality: {self.min_quality_score}")
+        print("🚀 Enhanced Structure-Preserving Web Scraper")
         print("="*70 + "\n")
 
     def _save_results(self):
@@ -509,11 +802,21 @@ class UniversalWebScraper:
             'scrape_time': datetime.now().isoformat(),
             'statistics': self.stats,
             'total_pages_saved': len(self.results),
-            'quality_threshold': self.min_quality_score
+            'quality_threshold': self.min_quality_score,
+            'structure_summary': {
+                'total_tables_extracted': self.stats['total_tables'],
+                'total_lists_extracted': self.stats['total_lists'],
+                'total_notes_extracted': self.stats['total_notes'],
+                'avg_tables_per_page': self.stats['total_tables'] / max(self.stats['successful'], 1),
+                'avg_lists_per_page': self.stats['total_lists'] / max(self.stats['successful'], 1)
+            }
         }
 
         with open(stats_file, 'w', encoding='utf-8') as f:
             json.dump(stats_data, f, indent=2)
+
+        # Save a human-readable summary
+        self._save_readable_summary()
 
         # Print summary
         print("\n" + "="*70)
@@ -521,6 +824,9 @@ class UniversalWebScraper:
         print("="*70)
         print(f"✅ Successfully scraped: {self.stats['successful']} pages")
         print(f"📊 Average quality score: {self.stats['avg_quality']:.2f}")
+        print(f"📋 Total tables extracted: {self.stats['total_tables']}")
+        print(f"📝 Total lists extracted: {self.stats['total_lists']}")
+        print(f"⚠️  Total notes extracted: {self.stats['total_notes']}")
         print(f"⚠️  Low quality/no content: {self.stats['low_quality']} pages")
         print(f"❌ Errors: {self.stats['errors']} pages")
         print(f"📈 Total attempted: {self.stats['total_attempted']} pages")
@@ -536,10 +842,45 @@ class UniversalWebScraper:
 
         print("="*70 + "\n")
 
+    def _save_readable_summary(self):
+        """Save a human-readable markdown summary of scraped content."""
+        summary_file = self.output_file.replace('.json', '_summary.md')
+
+        with open(summary_file, 'w', encoding='utf-8') as f:
+            f.write(f"# Web Scraping Summary\n\n")
+            f.write(f"**Domain:** {self.domain}\n")
+            f.write(f"**Scraped:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"**Pages:** {len(self.results)}\n\n")
+            f.write("---\n\n")
+
+            for idx, page in enumerate(self.results, 1):
+                f.write(f"## {idx}. {page['title']}\n\n")
+                f.write(f"**URL:** {page['url']}\n")
+                f.write(f"**Type:** {page['metadata']['content_type']}\n")
+                f.write(f"**Quality:** {page['metadata']['quality_score']:.2f}\n")
+
+                if page['structured_data']['tables']:
+                    f.write(f"**Tables:** {len(page['structured_data']['tables'])}\n")
+                if page['structured_data']['lists']:
+                    f.write(f"**Lists:** {len(page['structured_data']['lists'])}\n")
+                if page['structured_data']['notes']:
+                    f.write(f"**Notes:** {len(page['structured_data']['notes'])}\n")
+
+                f.write("\n### Headings\n\n")
+                for heading in page['structured_data']['headings'][:5]:
+                    f.write(f"{'#' * (heading['level'] + 1)} {heading['text']}\n")
+
+                if page['meta_description']:
+                    f.write(f"\n**Description:** {page['meta_description']}\n")
+
+                f.write("\n---\n\n")
+
+        print(f"📄 Readable summary saved to: {summary_file}")
+
 
 async def main():
     parser = argparse.ArgumentParser(
-        description='Enhanced Universal Web Scraper - Works on any website'
+        description='Enhanced Structure-Preserving Web Scraper - Preserves tables, lists, and context'
     )
     parser.add_argument('url', help='Starting URL to scrape')
     parser.add_argument('output', help='Output JSON file path')

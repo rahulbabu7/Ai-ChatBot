@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { MessageCircle } from "lucide-react";
 import ChatbotWindow from "./ChatbotWindow";
 import { API_URL } from "../config.js";
+import ReactMarkdown from 'react-markdown';
 
 const Chatbot = () => {
   const [isOpen, setIsOpen] = useState(false);
