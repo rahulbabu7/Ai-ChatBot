@@ -51,7 +51,7 @@ const Chatbot = () => {
           try {
             const parsed = JSON.parse(storedData);
             const sessionAge = Date.now() - parsed.timestamp;
-            const ONE_DAYS = 7 * 24 * 60 * 60 * 1000;
+            const ONE_DAYS = 1 * 24 * 60 * 60 * 1000;
 
             if (sessionAge > ONE_DAYS) {
               console.log("🗑️ Session expired, creating new one");
