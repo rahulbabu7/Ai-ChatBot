@@ -8,6 +8,7 @@ from pathlib import Path
 from backend.database import get_session
 from backend.auth_utils import get_client_from_header
 from backend.schemas import TaskResponse
+import asyncio
 
 # Import your Celery tasks
 from backend.tasks import pdf_embed_pipeline, qa_embed_pipeline
@@ -26,16 +27,20 @@ router = APIRouter(
 )
 
 # Configuration
-CLIENTS_DIR = (BASE_DIR / "../../client_data").resolve() 
+CLIENTS_DIR = (BASE_DIR / "../../client_data").resolve()
 CLIENTS_DIR.mkdir(exist_ok=True, parents=True)
 
+
+# ============================================================================
+# UPLOAD ENDPOINTS
+# ============================================================================
 
 @router.post("/upload-qa/me")
 async def upload_qa(
     file: UploadFile = File(...),
     client_id: str = Depends(get_client_from_header)
 ):
-    """Upload and merge Q&A JSON file with automatic re-embedding"""
+    """Upload and merge Q&A JSON file"""
     try:
         client_dir = os.path.join(CLIENTS_DIR, client_id)
         os.makedirs(client_dir, exist_ok=True)
@@ -83,7 +88,7 @@ async def upload_qa(
         for qa in new_data:
             questions = qa.get("questions", [qa.get("question")]) if qa.get("questions") else [qa.get("question")]
             is_duplicate = any(q.lower().strip() in existing_questions for q in questions if q)
-            
+
             if not is_duplicate:
                 merged_data.append(qa)
                 new_count += 1
@@ -101,7 +106,7 @@ async def upload_qa(
             "message": f"Uploaded {new_count} new Q&A entries for {client_id}",
             "total_qa": len(merged_data),
             "new_entries": new_count,
-            "note": "Q&A will be available immediately. Re-run embeddings to include in vector search."
+            "note": "Q&A available immediately via direct matching. Run /client/me/re-embed to add to vector search."
         }
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON file")
@@ -120,7 +125,7 @@ async def upload_qa_and_embed(
     try:
         # First upload the Q&A
         upload_result = await upload_qa(file, client_id)
-        
+
         # Then trigger re-embedding if new entries were added
         if upload_result.get("new_entries", 0) > 0:
             task = qa_embed_pipeline.delay(client_id)
@@ -177,13 +182,17 @@ async def upload_pdf(
             "message": f"PDF uploaded and text extracted for {client_id}",
             "pages_extracted": len(reader.pages),
             "text_length": len(text_content),
-            "note": "Run /client/me/embed-pdf to create embeddings for chatbot use"
+            "note": "Run /client/me/embed-pdf or /client/me/re-embed to create embeddings for chatbot use"
         }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to extract text from PDF: {str(e)}")
 
+
+# ============================================================================
+# EMBEDDING ENDPOINTS
+# ============================================================================
 
 @router.post("/me/embed-pdf", response_model=TaskResponse)
 async def embed_pdf(
@@ -219,20 +228,20 @@ async def re_embed_all(
     """Re-embed all sources (website, PDF, Q&A) for this client"""
     try:
         client_dir = os.path.join(CLIENTS_DIR, client_id)
-        
+
         # Check what sources exist
         has_website = os.path.exists(os.path.join(client_dir, "website_content.json"))
         has_pdf = os.path.exists(os.path.join(client_dir, "custom_pdf.txt"))
         has_qa = os.path.exists(os.path.join(client_dir, "custom_qa.json"))
-        
+
         if not (has_website or has_pdf or has_qa):
             raise HTTPException(
                 status_code=404,
                 detail="No sources found to embed. Please upload website data, PDF, or Q&A first."
             )
-        
+
         task = qa_embed_pipeline.delay(client_id)
-        
+
         sources = []
         if has_website:
             sources.append("website")
@@ -240,7 +249,7 @@ async def re_embed_all(
             sources.append("PDF")
         if has_qa:
             sources.append("Q&A")
-        
+
         return TaskResponse(
             task_id=task.id,
             status="queued",
@@ -252,34 +261,9 @@ async def re_embed_all(
         raise HTTPException(status_code=500, detail=f"Error queuing re-embed task: {str(e)}")
 
 
-@router.get("/pdf-status/me")
-async def check_pdf_status(
-    client_id: str = Depends(get_client_from_header)
-):
-    """Check PDF processing status"""
-    try:
-        client_dir = os.path.join(CLIENTS_DIR, client_id)
-        chroma_dir = os.path.abspath(os.path.join(BASE_DIR, "../../ChromaDatabase/vector-database/chroma_db"))
-        
-        # Check if collection exists in ChromaDB
-        has_embeddings = False
-        try:
-            import chromadb
-            chroma_client = chromadb.PersistentClient(path=chroma_dir)
-            collection = chroma_client.get_collection(client_id.lower())
-            has_embeddings = collection.count() > 0
-        except:
-            pass
-        
-        return {
-            "pdf_uploaded": os.path.exists(os.path.join(client_dir, "custom_pdf.pdf")),
-            "text_extracted": os.path.exists(os.path.join(client_dir, "custom_pdf.txt")),
-            "embedded": has_embeddings,
-            "chunks_file": os.path.exists(os.path.join(client_dir, "chunks.json")),
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error checking PDF status: {str(e)}")
-
+# ============================================================================
+# STATUS & VERIFICATION ENDPOINTS
+# ============================================================================
 
 @router.get("/status/me")
 async def check_status(
@@ -289,7 +273,7 @@ async def check_status(
     try:
         client_dir = os.path.join(CLIENTS_DIR, client_id)
         chroma_dir = os.path.abspath(os.path.join(BASE_DIR, "../../ChromaDatabase/vector-database/chroma_db"))
-        
+
         # Check if collection exists in ChromaDB
         has_embeddings = False
         num_documents = 0
@@ -301,7 +285,7 @@ async def check_status(
             has_embeddings = num_documents > 0
         except:
             pass
-        
+
         return {
             "crawled": os.path.exists(os.path.join(client_dir, "website_content.json")),
             "qa_uploaded": os.path.exists(os.path.join(client_dir, "custom_qa.json")),
@@ -313,6 +297,228 @@ async def check_status(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error checking status: {str(e)}")
 
+
+@router.get("/pdf-status/me")
+async def check_pdf_status(
+    client_id: str = Depends(get_client_from_header)
+):
+    """Check PDF processing status"""
+    try:
+        client_dir = os.path.join(CLIENTS_DIR, client_id)
+        chroma_dir = os.path.abspath(os.path.join(BASE_DIR, "../../ChromaDatabase/vector-database/chroma_db"))
+
+        # Check if collection exists in ChromaDB
+        has_embeddings = False
+        try:
+            import chromadb
+            chroma_client = chromadb.PersistentClient(path=chroma_dir)
+            collection = chroma_client.get_collection(client_id.lower())
+            has_embeddings = collection.count() > 0
+        except:
+            pass
+
+        return {
+            "pdf_uploaded": os.path.exists(os.path.join(client_dir, "custom_pdf.pdf")),
+            "text_extracted": os.path.exists(os.path.join(client_dir, "custom_pdf.txt")),
+            "embedded": has_embeddings,
+            "chunks_file": os.path.exists(os.path.join(client_dir, "chunks.json")),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error checking PDF status: {str(e)}")
+
+
+@router.get("/embeddings-status/me")
+async def check_embeddings_status(
+    client_id: str = Depends(get_client_from_header)
+):
+    """Check what's currently in the vector database - useful for verifying deletions worked"""
+    try:
+        chroma_dir = os.path.abspath(os.path.join(BASE_DIR, "../../ChromaDatabase/vector-database/chroma_db"))
+
+        result = {
+            "client_id": client_id,
+            "collection_exists": False,
+            "document_count": 0,
+            "sources_in_db": {},
+            "sources_on_disk": {}
+        }
+
+        # Check ChromaDB
+        try:
+            import chromadb
+            chroma_client = chromadb.PersistentClient(path=chroma_dir)
+            collection = chroma_client.get_collection(client_id.lower())
+
+            result["collection_exists"] = True
+            result["document_count"] = collection.count()
+
+            # Sample documents to see what sources are present
+            if result["document_count"] > 0:
+                sample = collection.get(limit=min(100, result["document_count"]))
+                sources = {}
+                for metadata in sample.get("metadatas", []):
+                    source = metadata.get("source", "unknown")
+                    sources[source] = sources.get(source, 0) + 1
+                result["sources_in_db"] = sources
+        except Exception as e:
+            result["db_error"] = str(e)
+
+        # Check disk
+        client_dir = os.path.join(CLIENTS_DIR, client_id)
+        result["sources_on_disk"] = {
+            "website": os.path.exists(os.path.join(client_dir, "website_content.json")),
+            "pdf": os.path.exists(os.path.join(client_dir, "custom_pdf.txt")),
+            "qa": os.path.exists(os.path.join(client_dir, "custom_qa.json"))
+        }
+
+        # Check for mismatch (indicates embeddings out of sync)
+        disk_sources = [k for k, v in result["sources_on_disk"].items() if v]
+        db_sources = list(result.get("sources_in_db", {}).keys())
+
+        result["synchronized"] = set(disk_sources) == set(db_sources) if db_sources else len(disk_sources) == 0
+        if not result["synchronized"]:
+            result["warning"] = "Sources on disk don't match vector database. Consider running /client/me/re-embed"
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error checking embeddings status: {str(e)}")
+
+
+@router.get("/verify-qa-embedding/me")
+async def verify_qa_embedding(
+    client_id: str = Depends(get_client_from_header)
+):
+    """
+    Verify that Q&A is properly embedded in the vector database.
+    Checks BOTH in-memory Q&A and ChromaDB embeddings.
+    """
+    try:
+        client_dir = os.path.join(CLIENTS_DIR, client_id)
+        qa_path = os.path.join(client_dir, "custom_qa.json")
+
+        result = {
+            "qa_file_exists": os.path.exists(qa_path),
+            "qa_count": 0,
+            "qa_in_memory": False,
+            "qa_in_vector_db": False,
+            "qa_chunks_in_db": 0
+        }
+
+        # Check Q&A file
+        if os.path.exists(qa_path):
+            async with aiofiles.open(qa_path, "r", encoding="utf-8") as f:
+                content = await f.read()
+                qa_data = json.loads(content)
+                result["qa_count"] = len(qa_data)
+                result["qa_in_memory"] = True
+
+        # Check ChromaDB for Q&A embeddings
+        try:
+            chroma_dir = os.path.abspath(os.path.join(BASE_DIR, "../../ChromaDatabase/vector-database/chroma_db"))
+            import chromadb
+            chroma_client = chromadb.PersistentClient(path=chroma_dir)
+            collection = chroma_client.get_collection(client_id.lower())
+
+            # Count Q&A documents
+            all_docs = collection.get(limit=collection.count())
+            qa_count = sum(1 for meta in all_docs.get("metadatas", [])
+                          if meta.get("source") == "qa" or meta.get("type") == "custom_qa")
+
+            result["qa_in_vector_db"] = qa_count > 0
+            result["qa_chunks_in_db"] = qa_count
+
+            # Sample Q&A
+            if qa_count > 0:
+                sample_qa = []
+                for i, metadata in enumerate(all_docs.get("metadatas", [])):
+                    if metadata.get("source") == "qa":
+                        sample_qa.append({
+                            "content": all_docs["documents"][i][:200] + "...",
+                            "metadata": metadata
+                        })
+                        if len(sample_qa) >= 3:
+                            break
+                result["sample_qa_from_db"] = sample_qa
+        except Exception as e:
+            result["vector_db_error"] = str(e)
+
+        # Overall status
+        if result["qa_in_memory"] and result["qa_in_vector_db"]:
+            result["status"] = "✅ Q&A is properly embedded (both in-memory and vector DB)"
+        elif result["qa_in_memory"] and not result["qa_in_vector_db"]:
+            result["status"] = "⚠️ Q&A file exists but not embedded. Run /client/me/re-embed"
+        elif not result["qa_in_memory"]:
+            result["status"] = "❌ No Q&A file uploaded"
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error verifying Q&A: {str(e)}")
+
+
+@router.get("/test-qa-retrieval/me")
+async def test_qa_retrieval(
+    query: str,
+    client_id: str = Depends(get_client_from_header)
+):
+    """
+    Test Q&A retrieval for a specific query.
+    Shows both direct matching and vector search results.
+    """
+    try:
+        from llm_service import HybridRetriever
+
+        retriever = HybridRetriever(client_id)
+
+        result = {
+            "query": query,
+            "direct_qa_match": None,
+            "vector_search_results": []
+        }
+
+        # Test direct Q&A matching
+        qa_match = retriever.match_custom_qa(query, threshold=0.75)
+        if qa_match:
+            result["direct_qa_match"] = {
+                "found": True,
+                "confidence": qa_match.get("confidence"),
+                "score": qa_match.get("score"),
+                "matched_question": qa_match.get("matched_question"),
+                "answer_preview": qa_match.get("answer", "")[:200] + "..."
+            }
+        else:
+            result["direct_qa_match"] = {"found": False}
+
+        # Test vector search
+        documents = retriever.retrieve_documents(query, top_k=10)
+        qa_docs = [doc for doc in documents if doc.get('metadata', {}).get('source') == 'qa']
+
+        result["vector_search_results"] = [
+            {
+                "score": doc.get("score"),
+                "content_preview": doc.get("content", "")[:200] + "...",
+                "metadata": doc.get("metadata")
+            }
+            for doc in qa_docs[:5]
+        ]
+
+        result["qa_docs_found_in_vector_search"] = len(qa_docs)
+
+        # Recommendation
+        if result["direct_qa_match"]["found"]:
+            result["recommendation"] = "✅ Direct Q&A match found - chatbot will use this"
+        elif result["qa_docs_found_in_vector_search"] > 0:
+            result["recommendation"] = "⚠️ No direct match, but Q&A found in vector search"
+        else:
+            result["recommendation"] = "❌ No Q&A found for this query"
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error testing Q&A retrieval: {str(e)}")
+
+
+# ============================================================================
+# VIEW ENDPOINTS
+# ============================================================================
 
 @router.get("/view-qa/me")
 async def view_qa(
@@ -427,7 +633,7 @@ async def view_chunks(
 
         # Return limited chunks for preview
         preview_chunks = chunks[:limit]
-        
+
         # Get statistics
         sources = {}
         for chunk in chunks:
@@ -446,11 +652,15 @@ async def view_chunks(
         raise HTTPException(status_code=500, detail=f"Error reading chunks: {str(e)}")
 
 
+# ============================================================================
+# DELETE ENDPOINTS (with auto re-embedding)
+# ============================================================================
+
 @router.delete("/delete-qa/me")
 async def delete_qa(
     client_id: str = Depends(get_client_from_header)
 ):
-    """Delete Q&A file"""
+    """Delete Q&A file and automatically re-embed remaining sources"""
     try:
         client_dir = os.path.join(CLIENTS_DIR, client_id)
         qa_path = os.path.join(client_dir, "custom_qa.json")
@@ -460,10 +670,40 @@ async def delete_qa(
 
         os.remove(qa_path)
 
-        return {
+        # Check if other sources exist AFTER deletion
+        has_website = os.path.exists(os.path.join(client_dir, "website_content.json"))
+        has_pdf = os.path.exists(os.path.join(client_dir, "custom_pdf.txt"))
+
+        result = {
             "success": True,
-            "message": "Q&A file deleted. Consider re-running embeddings to update the knowledge base."
+            "message": "Q&A file deleted"
         }
+
+        # Automatically trigger re-embedding if other sources exist
+        if has_website or has_pdf:
+            task = qa_embed_pipeline.delay(client_id)
+            result["re_embedding"] = {
+                "status": "queued",
+                "task_id": task.id,
+                "message": "Automatically re-embedding remaining sources to remove Q&A data from chatbot",
+                "remaining_sources": []
+            }
+            if has_website:
+                result["re_embedding"]["remaining_sources"].append("website")
+            if has_pdf:
+                result["re_embedding"]["remaining_sources"].append("PDF")
+        else:
+            # No sources left - clear the entire collection
+            try:
+                chroma_dir = os.path.abspath(os.path.join(BASE_DIR, "../../ChromaDatabase/vector-database/chroma_db"))
+                import chromadb
+                chroma_client = chromadb.PersistentClient(path=chroma_dir)
+                chroma_client.delete_collection(client_id.lower())
+                result["message"] = "Q&A deleted and vector database cleared (no other sources remain)"
+            except Exception as e:
+                result["message"] = f"Q&A deleted. Note: {str(e)}"
+
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -474,7 +714,7 @@ async def delete_qa(
 async def delete_pdf(
     client_id: str = Depends(get_client_from_header)
 ):
-    """Delete PDF files"""
+    """Delete PDF files and automatically re-embed remaining sources"""
     try:
         client_dir = os.path.join(CLIENTS_DIR, client_id)
         pdf_path = os.path.join(client_dir, "custom_pdf.pdf")
@@ -482,6 +722,9 @@ async def delete_pdf(
 
         deleted_files = []
         errors = []
+
+        # Check if PDF exists before deletion
+        pdf_existed = os.path.exists(pdf_path) or os.path.exists(text_path)
 
         for file_path, file_type in [(pdf_path, "PDF"), (text_path, "extracted text")]:
             if os.path.exists(file_path):
@@ -491,22 +734,102 @@ async def delete_pdf(
                 except Exception as e:
                     errors.append(f"Failed to delete {file_type}: {str(e)}")
 
-        if not deleted_files:
+        if not pdf_existed:
             raise HTTPException(status_code=404, detail="No PDF files found")
+
+        # Check if other sources exist AFTER deletion
+        has_website = os.path.exists(os.path.join(client_dir, "website_content.json"))
+        has_qa = os.path.exists(os.path.join(client_dir, "custom_qa.json"))
 
         result = {
             "success": True,
             "deleted_files": deleted_files,
-            "message": "PDF files deleted. Consider re-running embeddings to update the knowledge base."
         }
+
         if errors:
             result["errors"] = errors
+
+        # Automatically trigger re-embedding if other sources exist
+        if has_website or has_qa:
+            task = qa_embed_pipeline.delay(client_id)
+            result["re_embedding"] = {
+                "status": "queued",
+                "task_id": task.id,
+                "message": "Automatically re-embedding remaining sources to remove PDF data from chatbot",
+                "remaining_sources": []
+            }
+            if has_website:
+                result["re_embedding"]["remaining_sources"].append("website")
+            if has_qa:
+                result["re_embedding"]["remaining_sources"].append("Q&A")
+        else:
+            # No sources left - clear the entire collection
+            try:
+                chroma_dir = os.path.abspath(os.path.join(BASE_DIR, "../../ChromaDatabase/vector-database/chroma_db"))
+                import chromadb
+                chroma_client = chromadb.PersistentClient(path=chroma_dir)
+                chroma_client.delete_collection(client_id.lower())
+                result["message"] = "PDF deleted and vector database cleared (no other sources remain)"
+            except Exception as e:
+                result["message"] = f"PDF deleted. Note: {str(e)}"
 
         return result
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting PDF files: {str(e)}")
+
+
+@router.delete("/delete-website/me")
+async def delete_website(
+    client_id: str = Depends(get_client_from_header)
+):
+    """Delete website crawl data and automatically re-embed remaining sources"""
+    try:
+        client_dir = os.path.join(CLIENTS_DIR, client_id)
+        website_path = os.path.join(client_dir, "website_content.json")
+
+        if not os.path.exists(website_path):
+            raise HTTPException(status_code=404, detail="No website data found")
+
+        os.remove(website_path)
+
+        # Check if other sources exist AFTER deletion
+        has_pdf = os.path.exists(os.path.join(client_dir, "custom_pdf.txt"))
+        has_qa = os.path.exists(os.path.join(client_dir, "custom_qa.json"))
+
+        result = {
+            "success": True,
+            "message": "Website data deleted"
+        }
+
+        if has_pdf or has_qa:
+            task = qa_embed_pipeline.delay(client_id)
+            result["re_embedding"] = {
+                "status": "queued",
+                "task_id": task.id,
+                "message": "Automatically re-embedding remaining sources to remove website data from chatbot",
+                "remaining_sources": []
+            }
+            if has_pdf:
+                result["re_embedding"]["remaining_sources"].append("PDF")
+            if has_qa:
+                result["re_embedding"]["remaining_sources"].append("Q&A")
+        else:
+            try:
+                chroma_dir = os.path.abspath(os.path.join(BASE_DIR, "../../ChromaDatabase/vector-database/chroma_db"))
+                import chromadb
+                chroma_client = chromadb.PersistentClient(path=chroma_dir)
+                chroma_client.delete_collection(client_id.lower())
+                result["message"] = "Website data deleted and vector database cleared (no other sources remain)"
+            except Exception as e:
+                result["message"] = f"Website data deleted. Note: {str(e)}"
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete website data: {str(e)}")
 
 
 @router.delete("/clear-all/me")
@@ -516,13 +839,13 @@ async def clear_all_data(
     """Delete all client data (website, PDF, Q&A, embeddings)"""
     try:
         client_dir = os.path.join(CLIENTS_DIR, client_id)
-        
+
         if not os.path.exists(client_dir):
             raise HTTPException(status_code=404, detail="No client data found")
-        
+
         deleted_items = []
         errors = []
-        
+
         # Files to delete
         files_to_delete = [
             ("website_content.json", "website crawl data"),
@@ -532,7 +855,7 @@ async def clear_all_data(
             ("chunks.json", "chunks file"),
             ("embeddings.json", "embeddings file"),
         ]
-        
+
         for filename, description in files_to_delete:
             file_path = os.path.join(client_dir, filename)
             if os.path.exists(file_path):
@@ -541,7 +864,7 @@ async def clear_all_data(
                     deleted_items.append(description)
                 except Exception as e:
                     errors.append(f"Failed to delete {description}: {str(e)}")
-        
+
         # Delete ChromaDB collection
         try:
             chroma_dir = os.path.abspath(os.path.join(BASE_DIR, "../../ChromaDatabase/vector-database/chroma_db"))
@@ -551,17 +874,17 @@ async def clear_all_data(
             deleted_items.append("vector database")
         except Exception as e:
             errors.append(f"Failed to delete vector database: {str(e)}")
-        
+
         result = {
             "success": True,
             "deleted_items": deleted_items,
             "message": f"Deleted {len(deleted_items)} data sources for {client_id}"
         }
-        
+
         if errors:
             result["errors"] = errors
             result["message"] += f" (with {len(errors)} errors)"
-        
+
         return result
     except HTTPException:
         raise
