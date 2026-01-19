@@ -56,18 +56,18 @@ export default function AdminChatPage() {
   // Connect to WebSocket
   const connectWebSocket = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      console.log('✅ WebSocket already connected');
+      // console.log('✅ WebSocket already connected');
       return;
     }
 
     try {
       const wsUrl = `${WS_URL}/ws/admin/${sessionId}?token=${token}`;
-      console.log('🔌 Admin connecting to WebSocket:', wsUrl);
+      // console.log('🔌 Admin connecting to WebSocket:', wsUrl);
 
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
-        console.log('✅ Admin WebSocket connected');
+        // console.log('✅ Admin WebSocket connected');
         setWsConnected(true);
 
         // Send ping every 30 seconds
@@ -83,7 +83,7 @@ export default function AdminChatPage() {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log('📨 Admin WebSocket message:', data);
+          // console.log('📨 Admin WebSocket message:', data);
 
           handleWebSocketMessage(data);
         } catch (error) {
@@ -97,7 +97,7 @@ export default function AdminChatPage() {
       };
 
       ws.onclose = () => {
-        console.log('📴 Admin WebSocket disconnected');
+        // console.log('📴 Admin WebSocket disconnected');
         setWsConnected(false);
 
         if (ws.pingInterval) {
@@ -106,7 +106,7 @@ export default function AdminChatPage() {
 
         // Auto-reconnect after 3 seconds
         reconnectTimeoutRef.current = setTimeout(() => {
-          console.log('🔄 Attempting to reconnect Admin WebSocket...');
+          // console.log('🔄 Attempting to reconnect Admin WebSocket...');
           connectWebSocket();
         }, 3000);
       };
@@ -204,7 +204,7 @@ export default function AdminChatPage() {
         break;
 
       default:
-        console.log('Unknown WebSocket message type:', data.type, data);
+        // console.log('Unknown WebSocket message type:', data.type, data);
     }
   };
 

@@ -102,13 +102,13 @@ const createWebSocketService = (onDataUpdate, onStatusChange) => {
       ws = new WebSocket('ws://localhost:3001/api/chat-volume/live');
       
       ws.onopen = () => {
-        console.log('WebSocket connected');
+        // console.log('WebSocket connected');
         reconnectAttempts = 0;
         onStatusChange('connected');
       };
       
       ws.onclose = (event) => {
-        console.log('WebSocket disconnected:', event);
+        // console.log('WebSocket disconnected:', event);
         onStatusChange('disconnected');
         
         // Attempt reconnection
