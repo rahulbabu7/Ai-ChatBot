@@ -957,11 +957,10 @@ class UniversalWebScraper:
 
     async def _extract_dynamic_values(self, page: Page) -> Dict[str, any]:
         """
-        Enhanced extractor for dynamically loaded values with PROPER LABELS and ORDER preservation.
-        Works with counters, AJAX-loaded data, lazy content, etc.
+        Universal dynamic value extractor that works across ANY website/framework.
+        Handles: Elementor, WordPress, custom builds, React, Vue, etc.
         """
         try:
-            # Using raw string (r""") to avoid escaping issues with JavaScript regex
             dynamic_data = await page.evaluate(r"""
                 () => {
                     const data = {
@@ -970,7 +969,6 @@ class UniversalWebScraper:
                         lazy_loaded: []
                     };
 
-                    // Extract counter values (any framework) WITH BETTER LABEL DETECTION
                     const counterSelectors = [
                         '[data-to-value]',
                         '[data-count-to]',
@@ -978,7 +976,14 @@ class UniversalWebScraper:
                         '[data-purecounter-end]'
                     ];
 
-                    // Collect all counters with their DOM order
+                    const isValidLabel = (text) => {
+                        if (!text || text.length < 2 || text.length > 100) return false;
+                        if (/^[0-9,₹Rs.$€£¥\s]+$/.test(text)) return false;
+                        if (/^[0-9]+[,.]?[0-9]*$/.test(text)) return false;
+                        return true;
+                    };
+
+                    // Collect all counters
                     let allCounters = [];
                     counterSelectors.forEach(sel => {
                         document.querySelectorAll(sel).forEach((elem) => {
@@ -986,150 +991,138 @@ class UniversalWebScraper:
                                          elem.getAttribute('data-count-to') ||
                                          elem.getAttribute('data-target') ||
                                          elem.getAttribute('data-purecounter-end');
-
                             if (value) {
                                 allCounters.push({ elem, value });
                             }
                         });
                     });
 
-                    // Process each counter and find its label
+                    // Universal label finder for each counter
                     allCounters.forEach(({ elem, value }) => {
-                        let label = null;
+                        let bestLabel = null;
+                        let bestScore = 0;
 
-                        // STRATEGY 1: Look for title/label in PARENT container
-                        let parent = elem.closest('.elementor-widget-counter, .counter-box, .price-box, .fee-box, [class*="counter"], [class*="price"], [class*="fee"]');
+                        // Find the closest meaningful container (go up max 5 levels)
+                        let container = elem;
+                        for (let i = 0; i < 5; i++) {
+                            container = container.parentElement;
+                            if (!container) break;
 
-                        if (parent) {
-                            // Try to find title element in parent
-                            const titleElem = parent.querySelector('.elementor-counter-title, .counter-title, .price-label, .fee-label, h1, h2, h3, h4, h5, h6, .title, .label');
-                            if (titleElem && titleElem !== elem) {
-                                const titleText = titleElem.textContent.trim();
-                                if (
-                                    titleText &&
-                                    titleText.length < 100 &&
-                                    !/^[0-9]+[,.]?[0-9]*$/.test(titleText)
-                                ) {
-                                    label = titleText;
-                                }
-                            }
-
-                            // If still no label, try any text node in parent BEFORE the counter
-                            if (!label) {
-                                const walker = document.createTreeWalker(
-                                    parent,
-                                    NodeFilter.SHOW_TEXT,
-                                    null
-                                );
-
-                                let foundCounter = false;
-                                let textBeforeCounter = '';
-
-                                while (walker.nextNode()) {
-                                    if (walker.currentNode.parentElement === elem || walker.currentNode.parentElement.contains(elem)) {
-                                        foundCounter = true;
-                                        break;
-                                    }
-                                    const text = walker.currentNode.textContent.trim();
-                                    if (text && !/^[0-9,₹Rs.\s]+$/.test(text)) {
-                                        textBeforeCounter = text;
-                                    }
-                                }
-
-                                if (textBeforeCounter && textBeforeCounter.length < 100) {
-                                    label = textBeforeCounter;
-                                }
+                            // Stop at containers that likely group related content
+                            const classes = container.className || '';
+                            if (classes.match(/column|widget|box|card|item|section|container/i)) {
+                                break;
                             }
                         }
 
-                        // STRATEGY 2: Look at SIBLINGS (before and after)
-                        if (!label) {
-                            // Check previous sibling
-                            let prevSibling = elem.previousElementSibling;
-                            while (prevSibling && !label) {
-                                const text = prevSibling.textContent.trim();
-                                if (text && text.length < 100 && !text.match(/^\d+[,.]?\d*$/)) {
-                                    // Make sure it's not just the counter value
-                                    if (text !== value && text.replace(/[,\s]/g, '') !== value) {
-                                        label = text;
-                                        break;
-                                    }
+                        if (!container) container = elem.parentElement;
+
+                        // Strategy: Search ALL text elements in container and score them
+                        const searchElements = container ? container.querySelectorAll('*') : [elem.parentElement];
+
+                        Array.from(searchElements).forEach(el => {
+                            // Skip if it's the counter itself or contains it
+                            if (el === elem || el.contains(elem) || elem.contains(el)) return;
+
+                            // Get direct text content only
+                            let text = '';
+                            for (const node of el.childNodes) {
+                                if (node.nodeType === Node.TEXT_NODE) {
+                                    text += node.textContent;
                                 }
-                                prevSibling = prevSibling.previousElementSibling;
+                            }
+                            text = text.trim();
+
+                            if (!isValidLabel(text)) return;
+
+                            let score = 0;
+
+                            // SCORING SYSTEM (works universally)
+
+                            // 1. Class-based scoring
+                            const classes = (el.className || '').toLowerCase();
+                            if (classes.includes('title')) score += 15;
+                            if (classes.includes('label')) score += 15;
+                            if (classes.includes('name')) score += 10;
+                            if (classes.includes('heading')) score += 10;
+                            if (classes.includes('fee') || classes.includes('price') || classes.includes('cost')) score += 8;
+
+                            // 2. Tag-based scoring
+                            const tag = el.tagName.toLowerCase();
+                            if (tag.match(/^h[1-6]$/)) score += 12;
+                            if (tag === 'label') score += 10;
+                            if (tag === 'p' || tag === 'span' || tag === 'div') score += 3;
+
+                            // 3. Position scoring (prefer elements before the counter)
+                            const counterWrapper = elem.closest('[class*="counter"], [class*="number"], [class*="value"]') || elem.parentElement;
+                            if (counterWrapper) {
+                                const position = el.compareDocumentPosition(counterWrapper);
+                                if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+                                    score += 10; // Element comes before counter
+                                } else if (position & Node.DOCUMENT_POSITION_PRECEDING) {
+                                    score += 5; // Element comes after counter (less ideal but ok)
+                                }
                             }
 
-                            // If still no label, check next sibling
-                            if (!label) {
-                                let nextSibling = elem.nextElementSibling;
-                                while (nextSibling && !label) {
-                                    const text = nextSibling.textContent.trim();
-                                    if (text && text.length < 100 && !text.match(/^\d+[,.]?\d*$/)) {
-                                        if (text !== value && text.replace(/[,\s]/g, '') !== value) {
-                                            label = text;
-                                            break;
-                                        }
-                                    }
-                                    nextSibling = nextSibling.nextElementSibling;
-                                }
+                            // 4. Sibling proximity bonus
+                            if (el.parentElement === elem.parentElement) score += 8;
+                            if (el.nextElementSibling === elem || el.previousElementSibling === elem) score += 12;
+
+                            // 5. Text quality scoring
+                            if (text.length >= 5 && text.length <= 50) score += 5;
+                            if (text === text.toUpperCase() && text.length > 3) score += 3; // All caps often used for labels
+                            if (text.match(/fee|price|cost|deposit|total|tuition|charge/i)) score += 5;
+
+                            // 6. Avoid generic text
+                            if (text.match(/click|button|more|read|learn|details/i)) score -= 10;
+
+                            // Update best match
+                            if (score > bestScore) {
+                                bestScore = score;
+                                bestLabel = text;
+                            }
+                        });
+
+                        // If no good label found, use value-based fallback
+                        if (!bestLabel || bestScore < 5) {
+                            const numValue = parseFloat(value.replace(/[^0-9.]/g, ''));
+                            if (numValue < 1000) {
+                                bestLabel = `Fee (${value})`;
+                            } else if (numValue < 20000) {
+                                bestLabel = `Amount (${value})`;
+                            } else if (numValue < 100000) {
+                                bestLabel = `Fee (${value})`;
+                            } else {
+                                bestLabel = `Total (${value})`;
                             }
                         }
 
-                        // STRATEGY 3: Look in closest block container (div with specific classes)
-                        if (!label) {
-                            const container = elem.closest('.price-item, .fee-item, .pricing-column, [class*="fee"], [class*="price"]');
-                            if (container) {
-                                const headings = container.querySelectorAll('h1, h2, h3, h4, h5, h6, p, span, div');
-                                for (let h of headings) {
-                                    const text = h.textContent.trim();
-                                    // Make sure it's not the counter itself
-                                    if (text && h !== elem && !h.contains(elem) && text.length < 100) {
-                                        const cleanText = text.replace(/[₹Rs\.,\s\d]/g, '');
-                                        if (cleanText.length > 2) {
-                                            label = text;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        // Clean label
+                        bestLabel = bestLabel.replace(/[\n\r\t]+/g, ' ').replace(/\s+/g, ' ').trim();
 
-                        // FALLBACK: Use the value itself if no label found (but mark it)
-                        if (!label || label.match(/^\d+[,.]?\d*$/)) {
-                            label = value;  // Will be identifiable as needing manual review
-                        }
-
-                        // Clean up the label
-                        label = label
-                            .replace(/[\n\r\t]+/g, ' ')
-                            .replace(/\s+/g, ' ')
-                            .trim();
-
-                        // Add to array (preserves order!)
                         data.counters.push({
-                            label: label,
+                            label: bestLabel,
                             value: value,
-                            display_value: elem.textContent.trim()  // What user sees
+                            display_value: elem.textContent.trim()
                         });
                     });
 
-                    // Extract any data-* attributes that might contain values
+                    // Extract data attributes
                     document.querySelectorAll('[data-price], [data-cost], [data-fee], [data-amount], [data-value]').forEach(elem => {
                         const attrs = elem.attributes;
                         const elemData = {};
-
                         for (let attr of attrs) {
                             if (attr.name.startsWith('data-') && attr.value) {
                                 elemData[attr.name.replace('data-', '')] = attr.value;
                             }
                         }
-
                         if (Object.keys(elemData).length > 0) {
                             const id = elem.id || elem.className || 'element_' + Object.keys(data.data_attributes).length;
                             data.data_attributes[id] = elemData;
                         }
                     });
 
-                    // Find elements that were lazy loaded
+                    // Extract lazy loaded elements
                     document.querySelectorAll('.lazyloaded, [data-src][src]').forEach(elem => {
                         const src = elem.getAttribute('src') || elem.getAttribute('data-src');
                         if (src) {
