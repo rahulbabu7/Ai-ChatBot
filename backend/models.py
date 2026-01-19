@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 import uuid
 
 from sqlmodel import SQLModel, Field, select
-from sqlalchemy import Column, String, Integer, Text, DateTime, Index,Float
+from sqlalchemy import Column, String, Integer, Text, DateTime, Index, Float
 from sqlalchemy.sql import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 def utc_now() -> datetime:
     """Helper function to get current UTC datetime (timezone-aware)"""
     return datetime.now(timezone.utc)
+
+
+def ist_now() -> datetime:
+    """Helper function to get current IST datetime (timezone-aware)"""
+    ist = timezone(timedelta(hours=5, minutes=30))
+    return datetime.now(ist)
+
+
+def utc_to_ist(utc_dt: datetime) -> datetime:
+    """Convert UTC datetime to IST"""
+    if utc_dt is None:
+        return None
+
+    # If datetime is naive, assume it's UTC
+    if utc_dt.tzinfo is None:
+        utc_dt = utc_dt.replace(tzinfo=timezone.utc)
+
+    # Convert to IST
+    ist = timezone(timedelta(hours=5, minutes=30))
+    return utc_dt.astimezone(ist)
 
 
 # -----------------------------------------------------------------------------
@@ -47,15 +67,32 @@ class Chat(SQLModel, table=True):
     user_agent: Optional[str] = Field(default=None, sa_column=Column(String(255)))
     created_at: datetime = Field(
         default_factory=utc_now,
-        sa_column=Column(DateTime, nullable=False, server_default=func.now()),
+        sa_column=Column(DateTime, nullable=False, server_default=func.utc_timestamp()),
     )
     country_code: str = Field(default="unknown", sa_column=Column(String(10), nullable=False))
     admin_override: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default="0"))
     is_active: int = Field(default=1, sa_column=Column(Integer, nullable=False, server_default="1"))
     response_time: Optional[float] = Field(
-            default=None,
-            sa_column=Column(Float, nullable=True)
-        )  #
+        default=None,
+        sa_column=Column(Float, nullable=True)
+    )
+
+    def to_dict_ist(self) -> dict:
+        """Return dict with IST timestamps"""
+        return {
+            "id": self.id,
+            "client_id": self.client_id,
+            "session_id": self.session_id,
+            "role": self.role,
+            "message": self.message,
+            "user_agent": self.user_agent,
+            "created_at": utc_to_ist(self.created_at).isoformat() if self.created_at else None,
+            "country_code": self.country_code,
+            "admin_override": self.admin_override,
+            "is_active": self.is_active,
+            "response_time": self.response_time,
+        }
+
 
 class DomainMapping(SQLModel, table=True):
     __tablename__ = "domain_mappings"
@@ -98,14 +135,15 @@ class Task(SQLModel, table=True):
         ),
     )
 
+
 class Shortcut(SQLModel, table=True):
-    __tablename__="shortcut"
+    __tablename__ = "shortcut"
     """Shortcuts for quick admin responses"""
     id: Optional[int] = Field(default=None, primary_key=True)
-    client_id: str = Field(index=True)  # Each client has their own shortcuts
-    action_type: str  # Public, Personal, Admin, System
-    command: str  # The shortcut command (e.g., "hello", "refund")
-    message: str  # The full message to send
+    client_id: str = Field(index=True)
+    action_type: str
+    command: str
+    message: str
     created_at: datetime = Field(
         default_factory=utc_now,
         sa_column=Column(DateTime, nullable=False, server_default=func.now()),
@@ -114,7 +152,8 @@ class Shortcut(SQLModel, table=True):
         default_factory=utc_now,
         sa_column=Column(DateTime, nullable=False, server_default=func.now()),
     )
-    is_active: int = Field(default=1)  # Soft delete
+    is_active: int = Field(default=1)
+
 
 # -----------------------------------------------------------------------------
 # Helper Functions (Async)
@@ -310,8 +349,8 @@ async def get_tasks_for_client(session: AsyncSession, client_id: str) -> List[di
                 "name": r.name,
                 "status": r.status,
                 "info": r.info,
-                "created_at": r.created_at,
-                "updated_at": r.updated_at,
+                "created_at": utc_to_ist(r.created_at).isoformat() if r.created_at else None,
+                "updated_at": utc_to_ist(r.updated_at).isoformat() if r.updated_at else None,
             }
             for r in rows
         ]

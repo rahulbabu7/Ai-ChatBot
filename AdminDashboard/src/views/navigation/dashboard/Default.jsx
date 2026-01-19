@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../../config';
+import { useAuth } from '../../../hooks/useAuth';
 
 // react-bootstrap
 import Col from 'react-bootstrap/Col';
@@ -20,6 +21,8 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarEleme
 
 export default function DefaultPage() {
   const navigate = useNavigate();
+  const { token } = useAuth();
+  
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState('');
   const [chats, setChats] = useState([]);
@@ -39,7 +42,6 @@ export default function DefaultPage() {
   const [statsLoading, setStatsLoading] = useState(false);
 
   const chatContainerRef = useRef(null);
-  const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
 
   // Fetch dashboard stats (all metrics in one call)
   useEffect(() => {
@@ -235,9 +237,6 @@ export default function DefaultPage() {
     }
   };
 
-  if (!token) {
-    return <p className="text-center mt-5">❌ You must log in to view this page.</p>;
-  }
 
   return (
     <>
@@ -471,7 +470,14 @@ export default function DefaultPage() {
                     <div className="mb-2">{chat.message}</div>
                     <div className={`small mt-2 ${chat.role === 'user' ? 'text-white-50' : 'text-muted'}`}>
                       <div>
-                        <strong>[{chat.role}]</strong> {new Date(chat.created_at).toLocaleString()}
+                        <strong>[{chat.role}]</strong> {new Date(chat.created_at).toLocaleString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          timeZone: 'Asia/Kolkata',
+                          timeZoneName: 'short'
+                        })}
                       </div>
                       <div className="text-truncate">
                         {chat.country_code && `🌍 ${chat.country_code} | `}

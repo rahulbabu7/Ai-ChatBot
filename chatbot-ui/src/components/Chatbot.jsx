@@ -20,12 +20,15 @@ const Chatbot = () => {
     const fetchClientCredentials = async () => {
       try {
         setIsLoading(true);
-        const currentDomain = window.location.hostname;
+        const params = new URLSearchParams(window.location.search);
+        const clientDomain = params.get("domain");
+         const currentDomain = window.location.hostname;
 
         console.log("🌐 Detecting domain:", currentDomain);
 
         const response = await fetch(
-          `${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(currentDomain)}`,
+          //`${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(clientDomain)}`,
+           `${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(currentDomain)}`,
         );
 
         if (!response.ok) {
@@ -41,7 +44,7 @@ const Chatbot = () => {
         setClientId(data.client_id);
         setChatbotKey(data.chatbot_key);
         setClientName(data.client_name);
-        
+
         // 🔥 NOW generate/retrieve session ID after we have client_id
         const storageKey = `chatbot_session_${data.client_id}`;
         let storedData = localStorage.getItem(storageKey);
@@ -104,7 +107,7 @@ const Chatbot = () => {
     const sendHeartbeat = async (isOpen) => {
       try {
         console.log(`💓 Heartbeat: ${isOpen ? 'OPEN' : 'CLOSED'} - Session: ${sessionId.substring(0, 20)}...`);
-        
+
         await fetch(`${API_URL}/client/heartbeat/${clientId}`, {
           method: "POST",
           headers: {

@@ -47,7 +47,7 @@ class StructuredContentExtractor:
     ]
 
     @classmethod
-    async def extract_content(cls, page: Page, url: str) -> Optional[Dict[str, any]]:
+    async def extract_content(cls, page: Page, url: str, dynamic_data: Dict = None) -> Optional[Dict[str, any]]:
         """Extract content with structure preservation."""
         try:
             html = await page.content()
@@ -82,9 +82,9 @@ class StructuredContentExtractor:
             # Extract clean text (without tables/lists to avoid duplication)
             text_content = cls._extract_text_content(main_content)
 
-            # Build comprehensive structured content
+            # Build comprehensive structured content - NOW WITH DYNAMIC DATA!
             combined_content = cls._build_structured_content(
-                text_content, tables, lists, notes, headings
+                text_content, tables, lists, notes, headings, dynamic_data  # PASS dynamic_data
             )
 
             # Quality checks
@@ -100,7 +100,7 @@ class StructuredContentExtractor:
             return {
                 'url': url,
                 'title': title,
-                'content': combined_content,
+                'content': combined_content,  # NOW INCLUDES DYNAMIC DATA!
                 'meta_description': meta_description,
                 'structured_data': {
                     'headings': headings,
@@ -369,7 +369,8 @@ class StructuredContentExtractor:
         tables: List[Dict],
         lists: List[Dict],
         notes: List[str],
-        headings: List[Dict]
+        headings: List[Dict],
+        dynamic_data: Dict = None
     ) -> str:
         """Combine all extracted content into a well-structured format."""
         parts = []
@@ -378,7 +379,33 @@ class StructuredContentExtractor:
         if text:
             parts.append(text)
 
-        # Add tables with context
+        # ADD DYNAMIC CONTENT SECTION with PROPER formatting
+        if dynamic_data and (dynamic_data.get('counters') or dynamic_data.get('data_attributes')):
+            parts.append("\n\n" + "="*50)
+            parts.append("DYNAMIC VALUES (Counters, Prices, Fees)")
+            parts.append("="*50)
+
+            # Add counter values (now an array, preserves order!)
+            if dynamic_data.get('counters'):
+                parts.append("\n**Animated Counters/Values:**\n")
+                for counter in dynamic_data['counters']:
+                    label = counter['label']
+                    value = counter['value']
+                    display = counter.get('display_value', value)
+
+                    # Format nicely
+                    parts.append(f"• {label}: {value}")
+
+            # Add data attributes
+            if dynamic_data.get('data_attributes'):
+                parts.append("\n**Additional Data Attributes:**\n")
+                for elem_id, attrs in dynamic_data['data_attributes'].items():
+                    for attr_name, attr_value in attrs.items():
+                        parts.append(f"• {attr_name}: {attr_value}")
+
+            parts.append("")  # Empty line
+
+        # ... rest of the method stays the same
         if tables:
             parts.append("\n\n" + "="*50)
             parts.append("STRUCTURED TABLES")
@@ -387,15 +414,11 @@ class StructuredContentExtractor:
             for table in tables:
                 if table['context_before']:
                     parts.append(f"\n**Context:** {table['context_before']}")
-
                 parts.append(f"\n{table['markdown']}")
-
                 if table['context_after']:
                     parts.append(f"\n**Note:** {table['context_after']}")
+                parts.append("")
 
-                parts.append("")  # Empty line between tables
-
-        # Add important lists
         if lists:
             parts.append("\n" + "="*50)
             parts.append("IMPORTANT LISTS")
@@ -404,8 +427,6 @@ class StructuredContentExtractor:
             for lst in lists:
                 if lst['context']:
                     parts.append(f"\n**{lst['context']}**")
-
-                marker = '1.' if lst['type'] == 'ordered' else '-'
                 for i, item in enumerate(lst['items'], 1):
                     if lst['type'] == 'ordered':
                         parts.append(f"{i}. {item}")
@@ -413,7 +434,6 @@ class StructuredContentExtractor:
                         parts.append(f"- {item}")
                 parts.append("")
 
-        # Add notes and disclaimers
         if notes:
             parts.append("\n" + "="*50)
             parts.append("IMPORTANT NOTES")
@@ -423,6 +443,7 @@ class StructuredContentExtractor:
                 parts.append(f"\n{i}. {note}")
 
         return '\n'.join(parts)
+
 
     @staticmethod
     async def _extract_title(page: Page, soup: BeautifulSoup) -> str:
@@ -668,6 +689,8 @@ class UniversalWebScraper:
         self.content_extractor = StructuredContentExtractor()
         self.link_extractor = SmartLinkExtractor()
 
+    # ADD to UniversalWebScraper class:
+
     async def scrape(self):
         """Main scraping orchestration."""
         print(f"\n🔧 Starting Playwright browser...")
@@ -715,6 +738,413 @@ class UniversalWebScraper:
             self._save_results()
             return 1
 
+    async def _scroll_page(self, page: Page):
+        """Scroll page to trigger lazy-loaded content."""
+        try:
+            await page.evaluate("""
+                async () => {
+                    for (let i = 0; i < 5; i++) {
+                        window.scrollBy(0, 300);
+                        await new Promise(r => setTimeout(r, 200));
+                    }
+                    window.scrollTo(0, 0);
+                }
+            """)
+            await page.wait_for_timeout(1000)
+        except:
+            pass
+
+    async def _wait_for_dynamic_content(self, page: Page):
+        """
+        Universal wait for dynamically loaded content across different frameworks.
+        Handles: Elementor, lazy-loading, AJAX, React hydration, Vue mounting, etc.
+        """
+        try:
+            print("   ⏳ Waiting for dynamic content...")
+
+            # Strategy 1: Wait for common dynamic content indicators
+            dynamic_indicators = [
+                # Animation/counter frameworks
+                '[data-to-value]',
+                '[data-count-to]',
+                '[data-animate]',
+                '.countup',
+                '.counter',
+
+                # Lazy loading indicators
+                '[data-src]:not([src])',
+                '.lazy:not(.loaded)',
+                '.lazyload:not(.lazyloaded)',
+
+                # Loading spinners/skeletons (wait for them to disappear)
+                '.loading',
+                '.skeleton',
+                '.placeholder',
+
+                # Framework-specific hydration markers
+                '[data-reactroot]',
+                '[data-vue-app]',
+                '[ng-version]',
+            ]
+
+            # Check which dynamic elements exist
+            detected_elements = await page.evaluate(f"""
+                (selectors) => {{
+                    const found = [];
+                    selectors.forEach(sel => {{
+                        const elements = document.querySelectorAll(sel);
+                        if (elements.length > 0) {{
+                            found.push({{selector: sel, count: elements.length}});
+                        }}
+                    }});
+                    return found;
+                }}
+            """, dynamic_indicators)
+
+            if detected_elements:
+                print(f"   🔍 Detected dynamic elements: {len(detected_elements)} types")
+                for elem in detected_elements[:3]:  # Show first 3
+                    print(f"      • {elem['selector']}: {elem['count']} elements")
+
+            # Strategy 2: Wait for network to be mostly idle
+            # Give time for AJAX requests, lazy loads, etc.
+            await page.wait_for_load_state('networkidle', timeout=10000)
+
+            # Strategy 3: Wait for any animations/transitions to complete
+            # Check if body has stopped mutating (no more DOM changes)
+            try:
+                await page.wait_for_function("""
+                    () => {
+                        return new Promise((resolve) => {
+                            let mutationCount = 0;
+                            let timeoutId;
+
+                            const observer = new MutationObserver(() => {
+                                mutationCount++;
+                                clearTimeout(timeoutId);
+
+                                // If no mutations for 500ms, consider it stable
+                                timeoutId = setTimeout(() => {
+                                    observer.disconnect();
+                                    resolve(true);
+                                }, 500);
+                            });
+
+                            observer.observe(document.body, {
+                                childList: true,
+                                subtree: true,
+                                attributes: true,
+                                characterData: true
+                            });
+
+                            // Also resolve after 5 seconds max
+                            setTimeout(() => {
+                                observer.disconnect();
+                                resolve(true);
+                            }, 5000);
+                        });
+                    }
+                """, timeout=8000)
+                print("   ✅ DOM stabilized")
+            except:
+                print("   ⚠️  DOM stabilization timeout (continuing anyway)")
+
+            # Strategy 4: Specific waits for common patterns
+            # Wait for counters/animated numbers to finish
+            await self._wait_for_counters(page)
+
+            # Wait for images to load
+            await self._wait_for_images(page)
+
+            # Final safety buffer
+            await page.wait_for_timeout(1000)
+
+            print("   ✅ Dynamic content loaded")
+
+        except Exception as e:
+            print(f"   ⚠️  Dynamic content wait error: {e}")
+            # Fallback: just wait a reasonable amount
+            await page.wait_for_timeout(3000)
+
+
+    async def _wait_for_counters(self, page: Page):
+        """Wait for animated counters (any framework) to finish."""
+        try:
+            has_counters = await page.evaluate("""
+                () => {
+                    // Check for various counter patterns
+                    const selectors = [
+                        '[data-to-value]',
+                        '[data-count-to]',
+                        '.counter[data-target]',
+                        '.countup',
+                        '[data-purecounter-end]'
+                    ];
+
+                    for (const sel of selectors) {
+                        if (document.querySelector(sel)) return true;
+                    }
+                    return false;
+                }
+            """)
+
+            if not has_counters:
+                return
+
+            print("      🔢 Waiting for counters...")
+
+            # Wait for counters to stop changing
+            await page.wait_for_function("""
+                () => {
+                    const counterSelectors = [
+                        '[data-to-value]',
+                        '[data-count-to]',
+                        '.counter',
+                        '.countup'
+                    ];
+
+                    let allCounters = [];
+                    counterSelectors.forEach(sel => {
+                        allCounters.push(...document.querySelectorAll(sel));
+                    });
+
+                    if (allCounters.length === 0) return true;
+
+                    // Check if counters have target values
+                    return Array.from(allCounters).every(counter => {
+                        // Try different attribute patterns
+                        const target = counter.getAttribute('data-to-value') ||
+                                      counter.getAttribute('data-count-to') ||
+                                      counter.getAttribute('data-target') ||
+                                      counter.getAttribute('data-purecounter-end');
+
+                        if (!target) return true; // No target means not animated
+
+                        const currentText = counter.textContent.replace(/[^0-9.]/g, '');
+                        const targetText = target.replace(/[^0-9.]/g, '');
+
+                        // Allow small floating point differences
+                        return Math.abs(parseFloat(currentText) - parseFloat(targetText)) < 1;
+                    });
+                }
+            """, timeout=8000)
+
+            print("      ✅ Counters complete")
+
+        except Exception as e:
+            print(f"      ⚠️  Counter wait timeout: {e}")
+
+
+    async def _wait_for_images(self, page: Page):
+        """Wait for lazy-loaded images to load."""
+        try:
+            await page.evaluate("""
+                () => {
+                    return Promise.all(
+                        Array.from(document.images)
+                            .filter(img => !img.complete)
+                            .map(img => new Promise(resolve => {
+                                img.onload = img.onerror = resolve;
+                                // Timeout per image
+                                setTimeout(resolve, 3000);
+                            }))
+                    );
+                }
+            """)
+        except:
+            pass
+
+
+    async def _extract_dynamic_values(self, page: Page) -> Dict[str, any]:
+        """
+        Universal dynamic value extractor that works across ANY website/framework.
+        Handles: Elementor, WordPress, custom builds, React, Vue, etc.
+        """
+        try:
+            dynamic_data = await page.evaluate(r"""
+                () => {
+                    const data = {
+                        counters: [],
+                        data_attributes: {},
+                        lazy_loaded: []
+                    };
+
+                    const counterSelectors = [
+                        '[data-to-value]',
+                        '[data-count-to]',
+                        '[data-target]',
+                        '[data-purecounter-end]'
+                    ];
+
+                    const isValidLabel = (text) => {
+                        if (!text || text.length < 2 || text.length > 100) return false;
+                        if (/^[0-9,₹Rs.$€£¥\s]+$/.test(text)) return false;
+                        if (/^[0-9]+[,.]?[0-9]*$/.test(text)) return false;
+                        return true;
+                    };
+
+                    // Collect all counters
+                    let allCounters = [];
+                    counterSelectors.forEach(sel => {
+                        document.querySelectorAll(sel).forEach((elem) => {
+                            const value = elem.getAttribute('data-to-value') ||
+                                         elem.getAttribute('data-count-to') ||
+                                         elem.getAttribute('data-target') ||
+                                         elem.getAttribute('data-purecounter-end');
+                            if (value) {
+                                allCounters.push({ elem, value });
+                            }
+                        });
+                    });
+
+                    // Universal label finder for each counter
+                    allCounters.forEach(({ elem, value }) => {
+                        let bestLabel = null;
+                        let bestScore = 0;
+
+                        // Find the closest meaningful container (go up max 5 levels)
+                        let container = elem;
+                        for (let i = 0; i < 5; i++) {
+                            container = container.parentElement;
+                            if (!container) break;
+
+                            // Stop at containers that likely group related content
+                            const classes = container.className || '';
+                            if (classes.match(/column|widget|box|card|item|section|container/i)) {
+                                break;
+                            }
+                        }
+
+                        if (!container) container = elem.parentElement;
+
+                        // Strategy: Search ALL text elements in container and score them
+                        const searchElements = container ? container.querySelectorAll('*') : [elem.parentElement];
+
+                        Array.from(searchElements).forEach(el => {
+                            // Skip if it's the counter itself or contains it
+                            if (el === elem || el.contains(elem) || elem.contains(el)) return;
+
+                            // Get direct text content only
+                            let text = '';
+                            for (const node of el.childNodes) {
+                                if (node.nodeType === Node.TEXT_NODE) {
+                                    text += node.textContent;
+                                }
+                            }
+                            text = text.trim();
+
+                            if (!isValidLabel(text)) return;
+
+                            let score = 0;
+
+                            // SCORING SYSTEM (works universally)
+
+                            // 1. Class-based scoring
+                            const classes = (el.className || '').toLowerCase();
+                            if (classes.includes('title')) score += 15;
+                            if (classes.includes('label')) score += 15;
+                            if (classes.includes('name')) score += 10;
+                            if (classes.includes('heading')) score += 10;
+                            if (classes.includes('fee') || classes.includes('price') || classes.includes('cost')) score += 8;
+
+                            // 2. Tag-based scoring
+                            const tag = el.tagName.toLowerCase();
+                            if (tag.match(/^h[1-6]$/)) score += 12;
+                            if (tag === 'label') score += 10;
+                            if (tag === 'p' || tag === 'span' || tag === 'div') score += 3;
+
+                            // 3. Position scoring (prefer elements before the counter)
+                            const counterWrapper = elem.closest('[class*="counter"], [class*="number"], [class*="value"]') || elem.parentElement;
+                            if (counterWrapper) {
+                                const position = el.compareDocumentPosition(counterWrapper);
+                                if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+                                    score += 10; // Element comes before counter
+                                } else if (position & Node.DOCUMENT_POSITION_PRECEDING) {
+                                    score += 5; // Element comes after counter (less ideal but ok)
+                                }
+                            }
+
+                            // 4. Sibling proximity bonus
+                            if (el.parentElement === elem.parentElement) score += 8;
+                            if (el.nextElementSibling === elem || el.previousElementSibling === elem) score += 12;
+
+                            // 5. Text quality scoring
+                            if (text.length >= 5 && text.length <= 50) score += 5;
+                            if (text === text.toUpperCase() && text.length > 3) score += 3; // All caps often used for labels
+                            if (text.match(/fee|price|cost|deposit|total|tuition|charge/i)) score += 5;
+
+                            // 6. Avoid generic text
+                            if (text.match(/click|button|more|read|learn|details/i)) score -= 10;
+
+                            // Update best match
+                            if (score > bestScore) {
+                                bestScore = score;
+                                bestLabel = text;
+                            }
+                        });
+
+                        // If no good label found, use value-based fallback
+                        if (!bestLabel || bestScore < 5) {
+                            const numValue = parseFloat(value.replace(/[^0-9.]/g, ''));
+                            if (numValue < 1000) {
+                                bestLabel = `Fee (${value})`;
+                            } else if (numValue < 20000) {
+                                bestLabel = `Amount (${value})`;
+                            } else if (numValue < 100000) {
+                                bestLabel = `Fee (${value})`;
+                            } else {
+                                bestLabel = `Total (${value})`;
+                            }
+                        }
+
+                        // Clean label
+                        bestLabel = bestLabel.replace(/[\n\r\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+                        data.counters.push({
+                            label: bestLabel,
+                            value: value,
+                            display_value: elem.textContent.trim()
+                        });
+                    });
+
+                    // Extract data attributes
+                    document.querySelectorAll('[data-price], [data-cost], [data-fee], [data-amount], [data-value]').forEach(elem => {
+                        const attrs = elem.attributes;
+                        const elemData = {};
+                        for (let attr of attrs) {
+                            if (attr.name.startsWith('data-') && attr.value) {
+                                elemData[attr.name.replace('data-', '')] = attr.value;
+                            }
+                        }
+                        if (Object.keys(elemData).length > 0) {
+                            const id = elem.id || elem.className || 'element_' + Object.keys(data.data_attributes).length;
+                            data.data_attributes[id] = elemData;
+                        }
+                    });
+
+                    // Extract lazy loaded elements
+                    document.querySelectorAll('.lazyloaded, [data-src][src]').forEach(elem => {
+                        const src = elem.getAttribute('src') || elem.getAttribute('data-src');
+                        if (src) {
+                            data.lazy_loaded.push({
+                                tag: elem.tagName.toLowerCase(),
+                                src: src,
+                                alt: elem.getAttribute('alt') || ''
+                            });
+                        }
+                    });
+
+                    return data;
+                }
+            """)
+
+            return dynamic_data
+
+        except Exception as e:
+            print(f"   ⚠️  Dynamic value extraction failed: {e}")
+            return {}
+
+
     async def _scrape_page(self, context, url: str):
         """Scrape a single page with comprehensive error handling."""
         page = None
@@ -722,12 +1152,32 @@ class UniversalWebScraper:
             page = await context.new_page()
 
             print(f"🌐 Loading: {url}")
-            await page.goto(url, wait_until='domcontentloaded', timeout=45000)
-            await page.wait_for_timeout(3000)
+            await page.goto(url, wait_until='networkidle', timeout=60000)
 
-            content_data = await self.content_extractor.extract_content(page, url)
+            # Progressive loading strategy
+            await self._scroll_page(page)
+            await self._wait_for_dynamic_content(page)
+
+            # Extract dynamic values (counters, AJAX data, etc.)
+            dynamic_data = await self._extract_dynamic_values(page)
+
+            # Regular content extraction - NOW PASSING dynamic_data!
+            content_data = await self.content_extractor.extract_content(page, url, dynamic_data)
 
             if content_data:
+                # Still store in metadata for reference
+                if dynamic_data:
+                    content_data['metadata']['dynamic_content'] = dynamic_data
+
+                    # Log extracted dynamic values - FIXED: counters is now a list
+                    if dynamic_data.get('counters'):
+                        print(f"   💰 Extracted {len(dynamic_data['counters'])} dynamic values:")
+                        for counter in dynamic_data['counters'][:5]:  # Show first 5
+                            print(f"      • {counter['label']}: {counter['value']}")
+
+                    if dynamic_data.get('data_attributes'):
+                        print(f"   📊 Found {len(dynamic_data['data_attributes'])} elements with data attributes")
+
                 quality_score = content_data['metadata']['quality_score']
 
                 if quality_score >= self.min_quality_score:
@@ -775,6 +1225,69 @@ class UniversalWebScraper:
                     await page.close()
                 except:
                     pass
+
+    # async def _scrape_page(self, context, url: str):
+    #     """Scrape a single page with comprehensive error handling."""
+    #     page = None
+    #     try:
+    #         page = await context.new_page()
+
+    #         print(f"🌐 Loading: {url}")
+    #         await page.goto(url, wait_until='networkidle', timeout=60000)
+    #         await self._scroll_page(page)
+    #         await self._wait_for_dynamic_content(page)
+    #         await page.wait_for_timeout(5000)
+
+    #         content_data = await self.content_extractor.extract_content(page, url)
+
+    #         if content_data:
+    #             quality_score = content_data['metadata']['quality_score']
+
+    #             if quality_score >= self.min_quality_score:
+    #                 self.results.append(content_data)
+    #                 self.stats['successful'] += 1
+    #                 self.stats['avg_quality'] += quality_score
+
+    #                 # Update structure stats
+    #                 self.stats['total_tables'] += content_data['metadata']['num_tables']
+    #                 self.stats['total_lists'] += content_data['metadata']['num_lists']
+    #                 self.stats['total_notes'] += content_data['metadata']['num_notes']
+
+    #                 print(f"✅ [{len(self.results)}/{self.max_pages}] {url}")
+    #                 print(f"   📝 {content_data['metadata']['word_count']} words | "
+    #                       f"Quality: {quality_score:.2f} | "
+    #                       f"{content_data['metadata']['content_type']} | "
+    #                       f"Tables: {content_data['metadata']['num_tables']} | "
+    #                       f"Lists: {content_data['metadata']['num_lists']}")
+
+    #                 new_links = await self.link_extractor.extract_links(page, url, self.domain)
+    #                 for link in new_links:
+    #                     if link not in self.visited_urls and link not in self.queue:
+    #                         self.queue.append(link)
+    #             else:
+    #                 self.stats['low_quality'] += 1
+    #                 print(f"⚠️  Low quality (score: {quality_score:.2f}): {url}")
+    #         else:
+    #             self.stats['low_quality'] += 1
+    #             print(f"⚠️  No content extracted: {url}")
+
+    #     except PlaywrightTimeoutError:
+    #         self.stats['errors'] += 1
+    #         error_msg = f"Timeout loading {url}"
+    #         print(f"⏱️  {error_msg}")
+    #         self.stats['error_details'].append(error_msg)
+    #     except Exception as e:
+    #         self.stats['errors'] += 1
+    #         error_msg = f"{url}: {str(e)[:100]}"
+    #         print(f"❌ {error_msg}")
+    #         self.stats['error_details'].append(error_msg)
+    #         traceback.print_exc()
+    #     finally:
+    #         if page:
+    #             try:
+    #                 await page.close()
+    #             except:
+    #                 pass
 
     def _print_header(self):
         """Print scraper header."""

@@ -1,8 +1,11 @@
 // ProfileSettings.jsx
 import React from 'react';
 import { Container, Row, Col, Card, Form, Button } from 'react-bootstrap';
+import { useAuth } from '../../hooks/useAuth';
 
 const ProfileSettings = () => {
+  useAuth();
+  
   return (
     <Container fluid>
       <Row>
