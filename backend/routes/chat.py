@@ -10,6 +10,7 @@ from backend.database import get_session
 from backend.models import User, Chat
 from backend.schemas import ChatRequest
 from backend.auth_utils import get_client_from_header
+from backend.routes.websockets import manager
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHATBOT_LLM_DIR = os.path.abspath(os.path.join(BASE_DIR, "../../Chatbot/llm"))
@@ -77,6 +78,7 @@ async def client_chat(
     )
     session.add(user_chat)
     await session.commit()
+    await session.refresh(user_chat)
 
     # Generate chatbot reply with session context
     # This maintains conversation history across requests!
@@ -111,6 +113,21 @@ async def client_chat(
     )
     session.add(assistant_chat)
     await session.commit()
+    await session.refresh(assistant_chat)
+
+    # Broadcast chatbot reply to admin via WebSocket
+    await manager.send_to_admin(chatbot_session_id, {
+        "type": "new_bot_message",
+        "session_id": chatbot_session_id,
+        "message": {
+            "id": assistant_chat.id,
+            "role": "assistant",
+            "message": bot_reply,
+            "timestamp": assistant_chat.created_at.isoformat().replace('+00:00', 'Z') if assistant_chat.created_at else None,
+            "admin_override": False,
+            "response_time": response_time
+        }
+    })
 
     # Return enhanced response with all interactive features
     return {
@@ -204,7 +221,7 @@ async def get_chats(
             "country_code": chat.country_code,
             "admin_override": chat.admin_override,
             "is_active": chat.is_active,
-            "created_at": chat.created_at.isoformat() if chat.created_at else None
+            "created_at": chat.created_at.isoformat().replace('+00:00', 'Z') if chat.created_at else None
         }
         for chat in chats
     ]

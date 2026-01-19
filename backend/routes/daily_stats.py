@@ -420,7 +420,7 @@ async def get_active_users(
             active_sessions = [
                 {
                     "session_id": data["session_id"],
-                    "last_seen": data["last_seen"].isoformat(),
+                    "last_seen": data["last_seen"].isoformat().replace('+00:00', 'Z') if hasattr(data["last_seen"], 'isoformat') else data["last_seen"],
                     "ip": data.get("ip", "unknown"),
                     "user_agent": data.get("user_agent", "unknown")
                 }

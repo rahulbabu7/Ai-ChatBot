@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Table, Button, Form, Modal, Alert, Spinner } from 'react-bootstrap';
 import axios from 'axios';
 import { API_URL } from '../../config';
+import { useAuth } from '../../hooks/useAuth';
 
 const Shortcuts = () => {
+  const { token } = useAuth();
+  
   const [shortcuts, setShortcuts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -14,8 +17,6 @@ const Shortcuts = () => {
   const [exportMessage, setExportMessage] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-
-  const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
 
   // Fetch shortcuts from backend
   const fetchShortcuts = async () => {

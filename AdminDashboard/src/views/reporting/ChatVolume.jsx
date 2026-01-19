@@ -1,5 +1,6 @@
 // src/views/reporting/ChatVolume.jsx
 import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../../hooks/useAuth';
 import {
   Box,
   Card,
@@ -154,6 +155,8 @@ const createWebSocketService = (onDataUpdate, onStatusChange) => {
 };
 
 const ChatVolume = () => {
+  useAuth();
+  
   const [historicalData, setHistoricalData] = useState([]);
   const [realTimeData, setRealTimeData] = useState([]);
   const [loading, setLoading] = useState(true);

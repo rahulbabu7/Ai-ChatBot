@@ -1,7 +1,6 @@
 import os
 from urllib.parse import quote_plus
 from pydantic_settings import BaseSettings
-
 class Settings(BaseSettings):
     # API Keys
     GROQ_API_KEY: str

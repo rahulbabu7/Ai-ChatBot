@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../hooks/useAuth';
 
 // Material-UI Components
 import {
@@ -37,6 +38,7 @@ import { API_URL } from '../../config';
 
 const Duration = () => {
   const navigate = useNavigate();
+  const { token } = useAuth();
   
   // State management
   const [dateRange, setDateRange] = useState('last7days');
@@ -66,7 +68,6 @@ const Duration = () => {
 
   // Create axios instance with auth
   const createApi = useCallback(() => {
-    const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
     return axios.create({
       baseURL: API_URL,
       headers: {
@@ -74,7 +75,7 @@ const Duration = () => {
         'Content-Type': 'application/json'
       }
     });
-  }, []);
+  }, [token]);
 
   // Get date range parameters
   const getDateRangeParams = useCallback((range) => {
@@ -189,10 +190,11 @@ const Duration = () => {
         const responseTime = stat.avg_response_time || 0;
 
         return {
-          name: new Date(stat.date).toLocaleDateString('en-US', {
+          name: new Date(stat.date).toLocaleDateString('en-IN', {
             weekday: 'short',
             month: 'short',
-            day: 'numeric'
+            day: 'numeric',
+            timeZone: 'Asia/Kolkata'
           }),
           date: stat.date,
           visitors: stat.visitors || 0,
@@ -302,8 +304,20 @@ const Duration = () => {
 
     return {
       id: sessionId,
-      startTime: startTime.toLocaleString(),
-      endTime: endTime.toLocaleString(),
+      startTime: startTime.toLocaleString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Asia/Kolkata'
+      }),
+      endTime: endTime.toLocaleString('en-IN', {
+        day: 'numeric', 
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Asia/Kolkata'
+      }),
       duration: `${Math.round(actualDuration)} min`,
       durationValue: Math.round(actualDuration),
       messageDuration: `${messageDurationMinutes} min`,
