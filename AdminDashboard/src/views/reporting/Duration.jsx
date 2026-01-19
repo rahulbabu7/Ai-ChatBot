@@ -128,7 +128,7 @@ const Duration = () => {
       const api = createApi();
       const dateParams = getDateRangeParams(dateRange);
 
-      console.log('📅 Fetching data with params:', dateParams);
+      // console.log('📅 Fetching data with params:', dateParams);
 
       const [dailyResponse, dashboardResponse, sessionStatsResponse, sessionsResponse] = await Promise.all([
         api.get('/client/stats/daily', { params: dateParams }),
@@ -137,12 +137,12 @@ const Duration = () => {
         api.get('/client/sessions/me')
       ]);
 
-      console.log('✅ API Responses:', {
-        daily: dailyResponse.data,
-        dashboard: dashboardResponse.data,
-        sessionStats: sessionStatsResponse.data,
-        sessions: sessionsResponse.data
-      });
+      // console.log('✅ API Responses:', {
+      //   daily: dailyResponse.data,
+      //   dashboard: dashboardResponse.data,
+      //   sessionStats: sessionStatsResponse.data,
+      //   sessions: sessionsResponse.data
+      // });
 
       // Transform and set daily stats
       const transformed = transformDailyStats(dailyResponse.data.daily_stats || []);
@@ -255,9 +255,9 @@ const Duration = () => {
       const validSessions = sessionDetails.filter((session) => session !== null);
       setChatSessions(validSessions);
 
-      console.log(`✅ Loaded ${validSessions.length} sessions with duration data`);
+      // console.log(`✅ Loaded ${validSessions.length} sessions with duration data`);
     } catch (err) {
-      console.error('❌ Error fetching session details:', err);
+      // console.error('❌ Error fetching session details:', err);
       setChatSessions([]);
     }
   };
@@ -421,7 +421,7 @@ const Duration = () => {
 
   // Navigate to admin chat
   const handleOpenChat = (sessionId) => {
-    console.log('🔍 Opening admin chat for session:', sessionId);
+    // console.log('🔍 Opening admin chat for session:', sessionId);
     navigate(`/client-chat/${sessionId}`);
   };
 

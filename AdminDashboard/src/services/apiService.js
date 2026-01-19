@@ -10,8 +10,8 @@ const apiService = axios.create({
 apiService.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
-    console.log('Token:', token ? 'Present' : 'Missing');
-    console.log('Request URL:', config.url);
+    // console.log('Token:', token ? 'Present' : 'Missing');
+    // console.log('Request URL:', config.url);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

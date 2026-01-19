@@ -24,7 +24,7 @@ const Chatbot = () => {
         const clientDomain = params.get("domain");
          const currentDomain = window.location.hostname;
 
-        console.log("🌐 Detecting domain:", currentDomain);
+        // console.log("🌐 Detecting domain:", currentDomain);
 
         const response = await fetch(
           //`${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(clientDomain)}`,
@@ -57,12 +57,12 @@ const Chatbot = () => {
             const ONE_DAYS = 1 * 24 * 60 * 60 * 1000;
 
             if (sessionAge > ONE_DAYS) {
-              console.log("🗑️ Session expired, creating new one");
+              // console.log("🗑️ Session expired, creating new one");
               localStorage.removeItem(storageKey);
               currentSessionId = null;
             } else {
               currentSessionId = parsed.sessionId;
-              console.log("✅ Using existing session:", currentSessionId);
+              // console.log("✅ Using existing session:", currentSessionId);
             }
           } catch (e) {
             console.warn("⚠️ Invalid session data, creating new");
@@ -78,19 +78,19 @@ const Chatbot = () => {
             timestamp: Date.now(),
           };
           localStorage.setItem(storageKey, JSON.stringify(sessionData));
-          console.log("✨ Created new session:", currentSessionId);
+          // console.log("✨ Created new session:", currentSessionId);
         }
 
         setSessionId(currentSessionId);
         setError("");
 
-        console.log("✅ Chatbot configured:", {
-          clientName: data.client_name,
-          clientId: data.client_id,
-          sessionId: currentSessionId
-        });
+        // console.log("✅ Chatbot configured:", {
+        //   clientName: data.client_name,
+        //   clientId: data.client_id,
+        //   sessionId: currentSessionId
+        // });
       } catch (err) {
-        console.error("❌ Failed to configure chatbot:", err);
+        // console.error("❌ Failed to configure chatbot:", err);
         setError(err.message);
       } finally {
         setIsLoading(false);
@@ -106,7 +106,7 @@ const Chatbot = () => {
 
     const sendHeartbeat = async (isOpen) => {
       try {
-        console.log(`💓 Heartbeat: ${isOpen ? 'OPEN' : 'CLOSED'} - Session: ${sessionId.substring(0, 20)}...`);
+        // console.log(`💓 Heartbeat: ${isOpen ? 'OPEN' : 'CLOSED'} - Session: ${sessionId.substring(0, 20)}...`);
 
         await fetch(`${API_URL}/client/heartbeat/${clientId}`, {
           method: "POST",
@@ -199,7 +199,7 @@ const Chatbot = () => {
       );
       return;
     }
-    console.log("🔄 Toggling chat. Session ID:", sessionId);
+    // console.log("🔄 Toggling chat. Session ID:", sessionId);
     setIsOpen(!isOpen);
   };
 

@@ -234,7 +234,7 @@ const MissedChats = () => {
   // Handle view details
   const handleViewDetails = (chat) => {
     // Navigate to chat details page or open modal
-    console.log('View details:', chat);
+    // console.log('View details:', chat);
     // You can implement navigation or modal opening here
   };
 

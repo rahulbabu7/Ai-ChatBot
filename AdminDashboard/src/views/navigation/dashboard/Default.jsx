@@ -56,7 +56,7 @@ export default function DefaultPage() {
           }
         });
 
-        console.log('📊 Dashboard stats:', res.data);
+        // console.log('📊 Dashboard stats:', res.data);
 
         setTotalSessions(res.data.total_sessions);
         setTodaySessions(res.data.today_sessions);
@@ -113,7 +113,7 @@ export default function DefaultPage() {
           }
         });
 
-        console.log('📈 Daily stats:', res.data);
+        // console.log('📈 Daily stats:', res.data);
         setDailyStats(res.data.daily_stats || []);
       } catch (error) {
         console.error('❌ Failed to fetch daily stats:', error);
@@ -314,8 +314,8 @@ export default function DefaultPage() {
                         className="d-flex justify-content-between align-items-start"
                         action
                         onClick={() => {
-                          console.log('🔍 Navigating to session:', user.session_id);
-                          console.log('🔍 Full session ID length:', user.session_id.length);
+                          // console.log('🔍 Navigating to session:', user.session_id);
+                          // console.log('🔍 Full session ID length:', user.session_id.length);
                           // FIX: Use FULL session_id, not truncated
                           navigate(`/client-chat/${user.session_id}`);
                         }}
