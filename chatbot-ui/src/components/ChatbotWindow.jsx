@@ -12,6 +12,9 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [isAdminTyping, setIsAdminTyping] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
+  const [chatbotName, setChatbotName] = useState("AI Assistant");
+
+
 
   const messagesEndRef = useRef(null);
   const wsRef = useRef(null);
@@ -47,6 +50,55 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping, isAdminTyping]);
+
+  // useEffect(() => {
+  //   const fetchChatbotName = async () => {
+  //     try {
+  //       const response = await fetch(`${API_URL}/client/profile`, {
+  //         headers: {
+  //           "Content-Type": "application/json",
+  //           "X-Chatbot-Key": chatbotKey,   // OR Authorization if required
+  //         },
+  //       });
+
+  //       if (response.ok) {
+  //         const data = await response.json();
+  //         if (data.chatbot_name) {
+  //           setChatbotName(data.chatbot_name);
+  //         }
+  //       }
+  //     } catch (err) {
+  //       console.error("Failed to fetch chatbot name:", err);
+  //     }
+  //   };
+
+  //   if (clientId && chatbotKey) {
+  //     fetchChatbotName();
+  //   }
+  // }, [clientId, chatbotKey]);
+
+  useEffect(() => {
+    const fetchChatbotConfig = async () => {
+      try {
+        const response = await fetch(
+          `${API_URL}/public/chatbot-config?chatbot_key=${chatbotKey}`
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.chatbot_name) {
+            setChatbotName(data.chatbot_name);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load chatbot config:", err);
+      }
+    };
+
+    if (chatbotKey) {
+      fetchChatbotConfig();
+    }
+  }, [chatbotKey]);
 
   // Connect to WebSocket
   const connectWebSocket = (sessId) => {
@@ -133,9 +185,8 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
   const handleWebSocketMessage = (data) => {
     switch (data.type) {
       case "admin_message":
-        // console.log("👨‍💼 Received admin message via WebSocket:", data);
+        console.log("👨‍💼 Received admin message via WebSocket:", data);
 
-        // Admin sent a reply
         const adminMsg = {
           id: data.id || `ws_admin_${Date.now()}`,
           sender: "bot",
@@ -148,20 +199,18 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           admin_override: true,
         };
 
-        // Prevent duplicates - check if this exact message already exists
         setMessages(prev => {
-          // Check by ID or by content + admin_override flag
           const isDuplicate = prev.some(msg =>
-          msg.id === adminMsg.id ||
-          (msg.text === adminMsg.text && msg.admin_override === true && msg.sender === "bot")
+            msg.id === adminMsg.id ||
+            (msg.text === adminMsg.text && msg.admin_override === true && msg.sender === "bot")
           );
 
           if (isDuplicate) {
-            // console.log("⚠️ Duplicate admin message detected, skipping:", adminMsg);
+            console.log("⚠️ Duplicate admin message detected, skipping:", adminMsg);
             return prev;
           }
 
-          // console.log("✅ Adding new admin message to chat:", adminMsg);
+          console.log("✅ Adding new admin message to chat:", adminMsg);
           return [...prev, adminMsg];
         });
 
@@ -174,7 +223,43 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         break;
 
       case "message_deleted":
-        setMessages(prev => prev.filter(msg => msg.id !== data.message_id));
+        console.log("🗑️ Received message_deleted event:", data);
+        console.log("🗑️ Message ID to delete:", data.message_id);
+
+        setMessages(prev => {
+          console.log("📋 Current messages BEFORE deletion:");
+          prev.forEach(msg => {
+            console.log(`  - ID: ${msg.id} (type: ${typeof msg.id}), Text: "${msg.text.substring(0, 50)}..."`);
+          });
+
+          const filtered = prev.filter(msg => {
+            // Convert both IDs to numbers for comparison
+            const msgId = Number(msg.id);
+            const deleteId = Number(data.message_id);
+
+            const shouldKeep = msgId !== deleteId;
+
+            if (!shouldKeep) {
+              console.log(`✅ FOUND MESSAGE TO DELETE: ID ${msg.id}`);
+            }
+
+            return shouldKeep;
+          });
+
+          console.log("📋 Messages AFTER deletion:");
+          filtered.forEach(msg => {
+            console.log(`  - ID: ${msg.id}, Text: "${msg.text.substring(0, 50)}..."`);
+          });
+
+          if (filtered.length === prev.length) {
+            console.error("❌ NO MESSAGE WAS DELETED - ID NOT FOUND:", data.message_id);
+            console.error("Available IDs:", prev.map(m => m.id));
+          } else {
+            console.log(`✅ Successfully deleted message. Count: ${prev.length} → ${filtered.length}`);
+          }
+
+          return filtered;
+        });
         break;
 
       case "pong":
@@ -182,7 +267,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         break;
 
       default:
-        // console.log("Unknown WebSocket message type:", data.type);
+        console.log("Unknown WebSocket message type:", data.type);
     }
   };
 
@@ -238,7 +323,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         );
 
         const formattedMessages = activeMessages.map((chat) => ({
-          id: chat.id,
+          id: chat.id, // Keep as-is from database (should be a number)
           sender: chat.role === "user" ? "user" : "bot",
           text: chat.message,
           timestamp: new Date(chat.created_at).toLocaleTimeString('en-IN', {
@@ -249,14 +334,17 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           admin_override: chat.admin_override === 1,
         }));
 
-        // console.log("📚 Loaded chat history:", formattedMessages);
+        console.log("📚 Loaded chat history:");
+        formattedMessages.forEach(msg => {
+          console.log(`  - ID: ${msg.id} (type: ${typeof msg.id}), Sender: ${msg.sender}, Admin: ${msg.admin_override}`);
+        });
+
         setMessages(formattedMessages);
       }
     } catch (err) {
       console.error("Failed to load history:", err);
     }
   };
-
   const handleNewSession = () => {
     const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     setCurrentSessionId(newSessionId);
@@ -274,6 +362,9 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
     connectWebSocket(newSessionId);
   };
 
+  // Fixed handleSend function for ChatbotWindow.jsx
+  // Replace the existing handleSend function (around line 276-358)
+
   const handleSend = async (messageText = null) => {
     const textToSend = messageText || input.trim();
     if (!textToSend) return;
@@ -286,8 +377,10 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       timeZone: "Asia/Kolkata",
     });
 
+    const userMsgTempId = `temp_${Date.now()}`;
+
     const newMessage = {
-      id: `temp_${Date.now()}`,
+      id: userMsgTempId,
       sender: "user",
       text: textToSend,
       timestamp,
@@ -324,7 +417,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       }
 
       const data = await res.json();
-      // console.log("📤 Received response from backend:", data);
+      console.log("📤 Received response from backend:", data);
 
       if (data.session_id && data.session_id !== currentSessionId) {
         setCurrentSessionId(data.session_id);
@@ -336,13 +429,25 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         localStorage.setItem(storageKey, JSON.stringify(sessionData));
       }
 
+      // Update the user message with the real database ID
+      if (data.user_message_id) {
+        setMessages((prev) =>
+          prev.map(msg =>
+            msg.id === userMsgTempId
+              ? { ...msg, id: data.user_message_id }
+              : msg
+          )
+        );
+      }
+
       // IMPORTANT: Only add bot message if it's NOT from admin
       // Admin messages will come via WebSocket, so we skip them here
       if (!data.admin_override && data.reply) {
-        // console.log("🤖 Adding bot reply (not admin):", data.reply);
+        console.log("🤖 Adding bot reply (not admin):", data.reply);
+        console.log("🤖 Bot message ID from backend:", data.message_id);
 
         const botMessage = {
-          id: data.message_id || `bot_${Date.now()}`,
+          id: data.message_id, // Use the REAL database ID, not a temporary one
           sender: "bot",
           text: data.reply,
           timestamp: new Date().toLocaleTimeString('en-IN', {
@@ -354,16 +459,17 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         };
 
         setMessages((prev) => {
-          // Check for duplicates
+          // Check for duplicates by ID
           const isDuplicate = prev.some(msg => msg.id === botMessage.id);
           if (isDuplicate) {
-            // console.log("⚠️ Duplicate bot message, skipping");
+            console.log("⚠️ Duplicate bot message, skipping");
             return prev;
           }
+          console.log("✅ Added bot message with ID:", botMessage.id);
           return [...prev, botMessage];
         });
       } else if (data.admin_override) {
-        // console.log("👨‍💼 Admin reply detected in HTTP response - will be handled by WebSocket");
+        console.log("👨‍💼 Admin reply detected in HTTP response - will be handled by WebSocket");
         // Don't add admin messages from HTTP response
         // They will arrive via WebSocket
       }
@@ -376,14 +482,14 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         ...prev,
         {
           id: Date.now() + 1,
-                  sender: "bot",
-                  text: "⚠️ Error contacting backend.",
-                  timestamp: new Date().toLocaleTimeString('en-IN', {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    timeZone: "Asia/Kolkata",
-                  }),
-                  admin_override: false,
+          sender: "bot",
+          text: "⚠️ Error contacting backend.",
+          timestamp: new Date().toLocaleTimeString('en-IN', {
+            hour: "2-digit",
+            minute: "2-digit",
+            timeZone: "Asia/Kolkata",
+          }),
+          admin_override: false,
         },
       ]);
       setIsTyping(false);
@@ -396,7 +502,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       handleSend();
     }
   };
-
+console.log(chatbotName)
   return (
     <div
     style={{
@@ -464,7 +570,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       color: "#1f2937",
     }}
     >
-    AI Assistant
+      {chatbotName}
     </h3>
     <p
     style={{
@@ -821,6 +927,16 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
     }}
     >
     Press Enter to send, Shift+Enter for new line
+    </p>
+    <p
+    style={{
+      fontSize: "12px",
+      color: "#6b7280",
+      margin: "6px 0 0 0",
+      textAlign: "center",
+    }}
+    >
+    Made with ❤️ by <a href="https://kochi.digital/" >Kochi Digital</a>
     </p>
     </div>
 
