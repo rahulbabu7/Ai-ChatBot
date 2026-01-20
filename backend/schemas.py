@@ -1,4 +1,5 @@
 from pydantic import BaseModel,Field
+from typing import Optional
 
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1)
@@ -55,3 +56,10 @@ class DashboardStatsResponse(BaseModel):
     today_sessions: int
     today_visitors: int
     active_users_now: int
+
+
+class ClientProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    mobile_number: Optional[str] = None
+    chatbot_name: Optional[str] = None

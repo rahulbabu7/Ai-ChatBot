@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routes import auth,chat,domain,daily_stats,crawl_embed_pipeline,custom_files,admin_reply,shortcuts,websockets
+from .routes import auth,chat,domain,daily_stats,crawl_embed_pipeline,custom_files,admin_reply,shortcuts,websockets,userProfile,public_chatbot
 from .config import settings
 
 # === FastAPI App ===
@@ -24,3 +24,5 @@ app.include_router(custom_files.router)
 app.include_router(admin_reply.router)
 app.include_router(shortcuts.router)
 app.include_router(websockets.router)
+app.include_router(userProfile.router)
+app.include_router(public_chatbot.router)
