@@ -50,7 +50,6 @@ async def client_chat(
         raise HTTPException(status_code=403, detail="Invalid client or key")
 
     # Use provided session_id or create new one
-    # IMPORTANT: Frontend should send back the session_id for conversation continuity
     chatbot_session_id = req.session_id or str(uuid.uuid4())
 
     # Capture user-agent and IP address
@@ -78,18 +77,20 @@ async def client_chat(
     )
     session.add(user_chat)
     await session.commit()
-    await session.refresh(user_chat)
+    await session.refresh(user_chat)  # ← IMPORTANT: Get the database ID
+
+    # Store the user message ID
+    user_message_id = user_chat.id
 
     # Generate chatbot reply with session context
-    # This maintains conversation history across requests!
     bot_response = chat_with_model(
         client_id=client_id,
         query=req.message,
-        session_id=chatbot_session_id,  # ← KEY: Pass session_id for context
+        session_id=chatbot_session_id,
         include_history=True,
         enable_clarifications=True
     )
-    
+
     response_time = time.time() - start_time
 
     # Extract answer from response
@@ -113,7 +114,10 @@ async def client_chat(
     )
     session.add(assistant_chat)
     await session.commit()
-    await session.refresh(assistant_chat)
+    await session.refresh(assistant_chat)  # ← IMPORTANT: Get the database ID
+
+    # Store the bot message ID
+    bot_message_id = assistant_chat.id
 
     # Broadcast chatbot reply to admin via WebSocket
     await manager.send_to_admin(chatbot_session_id, {
@@ -129,10 +133,13 @@ async def client_chat(
         }
     })
 
-    # Return enhanced response with all interactive features
+    # 🔥 CRITICAL FIX: Return message IDs so frontend can use real database IDs
     return {
-        "session_id": bot_response.get("session_id", chatbot_session_id),  # Return session_id
+        "session_id": bot_response.get("session_id", chatbot_session_id),
         "reply": bot_reply,
+        "user_message_id": user_message_id,      # ← ADD THIS
+        "message_id": bot_message_id,            # ← ADD THIS
+        "admin_override": False,                  # ← ADD THIS (not admin)
         "confidence": bot_response.get("confidence"),
         "type": bot_response.get("type"),
         "needs_clarification": bot_response.get("needs_clarification", False),
@@ -143,7 +150,6 @@ async def client_chat(
         "processing_time": bot_response.get("processing_time", response_time),
         "metadata": bot_response.get("metadata", {})
     }
-
 
 @router.post("/context/{client_id}")
 async def context_endpoint(

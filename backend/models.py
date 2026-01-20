@@ -5,9 +5,11 @@ from typing import Optional, List
 import uuid
 
 from sqlmodel import SQLModel, Field, select
-from sqlalchemy import Column, String, Integer, Text, DateTime, Index, Float
+from sqlalchemy import Column, String, Integer, Text, DateTime, Index, Float, ForeignKey
+from sqlalchemy.orm import relationship  # Use SQLAlchemy's relationship
 from sqlalchemy.sql import func
 from sqlalchemy.ext.asyncio import AsyncSession
+
 
 
 def utc_now() -> datetime:
@@ -40,7 +42,6 @@ def utc_to_ist(utc_dt: datetime) -> datetime:
 # -----------------------------------------------------------------------------
 class User(SQLModel, table=True):
     __tablename__ = "users"
-
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(sa_column=Column(String(100), unique=True, nullable=False, index=True))
     password: str = Field(sa_column=Column(String(255), nullable=False))
@@ -49,7 +50,26 @@ class User(SQLModel, table=True):
     mobile: Optional[str] = Field(default=None, sa_column=Column(String(20)))
     role: str = Field(default="client", sa_column=Column(String(20), nullable=False))
     client_id: str = Field(sa_column=Column(String(100), unique=True, nullable=False, index=True))
-    chatbot_key: Optional[str] = Field(default=None, sa_column=Column(String(100)))
+    chatbot_key: Optional[str] = Field(default=None, sa_column=Column(String(100), unique=True))
+
+
+class ChatbotName(SQLModel, table=True):
+    __tablename__ = "chatbot_name"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    client_id: str = Field(
+        sa_column=Column(
+            String(100),
+            ForeignKey("users.client_id", ondelete="CASCADE"),
+            nullable=False,
+            index=True
+        )
+    )
+    chatbot_name: str = Field(
+        default="AI Assistant",
+        sa_column=Column(String(100), nullable=False)
+    )
+
+
 
 
 class Chat(SQLModel, table=True):
@@ -357,3 +377,45 @@ async def get_tasks_for_client(session: AsyncSession, client_id: str) -> List[di
     except Exception as e:
         print(f"Error getting tasks: {e}")
         return []
+
+
+
+# ----------------------------
+# CHATBOT NAME HELPERS (Async)
+# ----------------------------
+async def get_chatbot_name(session: AsyncSession, client_id: str) -> Optional[str]:
+    """Get chatbot name for a client"""
+    try:
+        statement = select(ChatbotName).where(ChatbotName.client_id == client_id)
+        result = await session.execute(statement)
+        chatbot = result.scalar_one_or_none()
+        return chatbot.chatbot_name if chatbot else "AI Assistant"
+    except Exception as e:
+        print(f"Error getting chatbot name: {e}")
+        return "AI Assistant"
+
+
+async def set_chatbot_name(session: AsyncSession, client_id: str, chatbot_name: str) -> bool:
+    """Set or update chatbot name for a client"""
+    try:
+        statement = select(ChatbotName).where(ChatbotName.client_id == client_id)
+        result = await session.execute(statement)
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            existing.chatbot_name = chatbot_name
+            session.add(existing)
+        else:
+            session.add(
+                ChatbotName(
+                    client_id=client_id,
+                    chatbot_name=chatbot_name,
+                )
+            )
+
+        await session.commit()
+        return True
+    except Exception as e:
+        await session.rollback()
+        print(f"Error setting chatbot name: {e}")
+        return False
