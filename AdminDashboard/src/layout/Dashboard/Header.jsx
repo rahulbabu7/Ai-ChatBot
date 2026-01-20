@@ -224,7 +224,8 @@ export default function Header() {
             {/* User Profile Dropdown */}
             <Dropdown align="end">
               <Dropdown.Toggle className="pc-head-link p-0 border-0 bg-transparent" variant="link" id="user-dropdown">
-                <Image src={Img2} alt="user-avatar" style={{ width: '35px', height: '35px', cursor: 'pointer' }} roundedCircle />
+                {/* Avatar image removed from dropdown toggle - replaced with user icon */}
+                <i className="ph ph-user-circle" style={{ fontSize: '1.5rem', cursor: 'pointer' }} />
               </Dropdown.Toggle>
               
               <Dropdown.Menu className="dropdown-user-profile pc-h-dropdown p-0 overflow-hidden">
