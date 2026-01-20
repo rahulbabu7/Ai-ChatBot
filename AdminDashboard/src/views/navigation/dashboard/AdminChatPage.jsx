@@ -589,9 +589,9 @@ export default function AdminChatPage() {
               <Form.Label className="fw-bold d-flex justify-content-between align-items-center">
                 <span>
                   💬 Send Admin Reply
-                  <Badge bg="success" className="ms-2">
+                  {/* <Badge bg="success" className="ms-2">
                     User will see this instantly via WebSocket
-                  </Badge>
+                  </Badge>*/}
                 </span>
                 <small className="text-muted fw-normal">💡 Type / for shortcuts ({shortcuts.length} available)</small>
               </Form.Label>
@@ -665,7 +665,7 @@ export default function AdminChatPage() {
                 <small className="text-muted d-block mb-1">
                   💡 Your reply will appear with a green background and "Support Team" label
                 </small>
-                <small
+                {/* <small
                   className={wsConnected ? 'text-success' : 'text-danger'}
                   style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
                 >
@@ -679,7 +679,7 @@ export default function AdminChatPage() {
                     }}
                   ></span>
                   {wsConnected ? 'WebSocket Connected' : 'WebSocket Disconnected'}
-                </small>
+                </small>*/}
               </div>
 
               <Button type="submit" variant="success" disabled={sending || !replyMessage.trim() || !wsConnected} size="lg">

@@ -134,12 +134,12 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
 
           handleWebSocketMessage(data);
         } catch (error) {
-          console.error("❌ Error parsing WebSocket message:", error);
+          // console.error("❌ Error parsing WebSocket message:", error);
         }
       };
 
       ws.onerror = (error) => {
-        console.error("❌ WebSocket error:", error);
+        // console.error("❌ WebSocket error:", error);
         setWsConnected(false);
       };
 
@@ -185,7 +185,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
   const handleWebSocketMessage = (data) => {
     switch (data.type) {
       case "admin_message":
-        console.log("👨‍💼 Received admin message via WebSocket:", data);
+        // console.log("👨‍💼 Received admin message via WebSocket:", data);
 
         const adminMsg = {
           id: data.id || `ws_admin_${Date.now()}`,
@@ -206,11 +206,11 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           );
 
           if (isDuplicate) {
-            console.log("⚠️ Duplicate admin message detected, skipping:", adminMsg);
+            // console.log("⚠️ Duplicate admin message detected, skipping:", adminMsg);
             return prev;
           }
 
-          console.log("✅ Adding new admin message to chat:", adminMsg);
+          // console.log("✅ Adding new admin message to chat:", adminMsg);
           return [...prev, adminMsg];
         });
 
@@ -223,14 +223,14 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         break;
 
       case "message_deleted":
-        console.log("🗑️ Received message_deleted event:", data);
-        console.log("🗑️ Message ID to delete:", data.message_id);
+        // console.log("🗑️ Received message_deleted event:", data);
+        // console.log("🗑️ Message ID to delete:", data.message_id);
 
         setMessages(prev => {
-          console.log("📋 Current messages BEFORE deletion:");
-          prev.forEach(msg => {
-            console.log(`  - ID: ${msg.id} (type: ${typeof msg.id}), Text: "${msg.text.substring(0, 50)}..."`);
-          });
+          // console.log("📋 Current messages BEFORE deletion:");
+          // prev.forEach(msg => {
+          //   // console.log(`  - ID: ${msg.id} (type: ${typeof msg.id}), Text: "${msg.text.substring(0, 50)}..."`);
+          // });
 
           const filtered = prev.filter(msg => {
             // Convert both IDs to numbers for comparison
@@ -240,23 +240,23 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
             const shouldKeep = msgId !== deleteId;
 
             if (!shouldKeep) {
-              console.log(`✅ FOUND MESSAGE TO DELETE: ID ${msg.id}`);
+              // console.log(`✅ FOUND MESSAGE TO DELETE: ID ${msg.id}`);
             }
 
             return shouldKeep;
           });
 
-          console.log("📋 Messages AFTER deletion:");
-          filtered.forEach(msg => {
-            console.log(`  - ID: ${msg.id}, Text: "${msg.text.substring(0, 50)}..."`);
-          });
+          // console.log("📋 Messages AFTER deletion:");
+          // filtered.forEach(msg => {
+          //   // console.log(`  - ID: ${msg.id}, Text: "${msg.text.substring(0, 50)}..."`);
+          // });
 
-          if (filtered.length === prev.length) {
-            console.error("❌ NO MESSAGE WAS DELETED - ID NOT FOUND:", data.message_id);
-            console.error("Available IDs:", prev.map(m => m.id));
-          } else {
-            console.log(`✅ Successfully deleted message. Count: ${prev.length} → ${filtered.length}`);
-          }
+          // if (filtered.length === prev.length) {
+          //   console.error("❌ NO MESSAGE WAS DELETED - ID NOT FOUND:", data.message_id);
+          //   console.error("Available IDs:", prev.map(m => m.id));
+          // } else {
+          //   console.log(`✅ Successfully deleted message. Count: ${prev.length} → ${filtered.length}`);
+          // }
 
           return filtered;
         });
@@ -267,7 +267,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         break;
 
       default:
-        console.log("Unknown WebSocket message type:", data.type);
+        // console.log("Unknown WebSocket message type:", data.type);
     }
   };
 
@@ -334,15 +334,15 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           admin_override: chat.admin_override === 1,
         }));
 
-        console.log("📚 Loaded chat history:");
-        formattedMessages.forEach(msg => {
-          console.log(`  - ID: ${msg.id} (type: ${typeof msg.id}), Sender: ${msg.sender}, Admin: ${msg.admin_override}`);
-        });
+        // console.log("📚 Loaded chat history:");
+        // formattedMessages.forEach(msg => {
+        //   console.log(`  - ID: ${msg.id} (type: ${typeof msg.id}), Sender: ${msg.sender}, Admin: ${msg.admin_override}`);
+        // });
 
         setMessages(formattedMessages);
       }
     } catch (err) {
-      console.error("Failed to load history:", err);
+      // console.error("Failed to load history:", err);
     }
   };
   const handleNewSession = () => {
@@ -417,7 +417,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       }
 
       const data = await res.json();
-      console.log("📤 Received response from backend:", data);
+      // console.log("📤 Received response from backend:", data);
 
       if (data.session_id && data.session_id !== currentSessionId) {
         setCurrentSessionId(data.session_id);
@@ -443,8 +443,8 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       // IMPORTANT: Only add bot message if it's NOT from admin
       // Admin messages will come via WebSocket, so we skip them here
       if (!data.admin_override && data.reply) {
-        console.log("🤖 Adding bot reply (not admin):", data.reply);
-        console.log("🤖 Bot message ID from backend:", data.message_id);
+        // console.log("🤖 Adding bot reply (not admin):", data.reply);
+        // console.log("🤖 Bot message ID from backend:", data.message_id);
 
         const botMessage = {
           id: data.message_id, // Use the REAL database ID, not a temporary one
@@ -462,14 +462,14 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           // Check for duplicates by ID
           const isDuplicate = prev.some(msg => msg.id === botMessage.id);
           if (isDuplicate) {
-            console.log("⚠️ Duplicate bot message, skipping");
+            // console.log("⚠️ Duplicate bot message, skipping");
             return prev;
           }
-          console.log("✅ Added bot message with ID:", botMessage.id);
+          // console.log("✅ Added bot message with ID:", botMessage.id);
           return [...prev, botMessage];
         });
       } else if (data.admin_override) {
-        console.log("👨‍💼 Admin reply detected in HTTP response - will be handled by WebSocket");
+        // console.log("👨‍💼 Admin reply detected in HTTP response - will be handled by WebSocket");
         // Don't add admin messages from HTTP response
         // They will arrive via WebSocket
       }
@@ -502,7 +502,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       handleSend();
     }
   };
-console.log(chatbotName)
+// console.log(chatbotName)
   return (
     <div
     style={{
