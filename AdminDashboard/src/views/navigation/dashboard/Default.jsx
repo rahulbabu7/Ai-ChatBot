@@ -3,6 +3,8 @@ import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../../config';
 import { useAuth } from '../../../hooks/useAuth';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 // react-bootstrap
 import Col from 'react-bootstrap/Col';
@@ -22,7 +24,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarEleme
 export default function DefaultPage() {
   const navigate = useNavigate();
   const { token } = useAuth();
-  
+
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState('');
   const [chats, setChats] = useState([]);
@@ -467,7 +469,11 @@ export default function DefaultPage() {
                     }`}
                     style={{ maxWidth: '75%' }}
                   >
-                    <div className="mb-2">{chat.message}</div>
+                    <div className="mb-2">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {chat.message}
+                      </ReactMarkdown>
+                    </div>
                     <div className={`small mt-2 ${chat.role === 'user' ? 'text-white-50' : 'text-muted'}`}>
                       <div>
                         <strong>[{chat.role}]</strong> {new Date(chat.created_at).toLocaleString('en-IN', {
