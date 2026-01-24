@@ -99,7 +99,35 @@ const Chatbot = () => {
 
     fetchClientCredentials();
   }, []);
+  // In Chatbot.jsx, add this useEffect after your existing useEffects:
 
+  useEffect(() => {
+    // Notify parent window about chatbot state
+    const sendSizeUpdate = () => {
+      if (window.parent !== window) {
+        window.parent.postMessage({
+          type: 'chatbot-resize',
+          isOpen: isOpen,
+          width: isOpen ? 400 : 80,
+          height: isOpen ? 600 : 80
+        }, '*');
+      }
+    };
+
+    sendSizeUpdate();
+  }, [isOpen]);
+
+  // Also add this on component mount to set initial size
+  useEffect(() => {
+    if (window.parent !== window) {
+      window.parent.postMessage({
+        type: 'chatbot-resize',
+        isOpen: false,
+        width: 80,
+        height: 80
+      }, '*');
+    }
+  }, []);
   // Send heartbeat when chatbot is open
   useEffect(() => {
     if (!clientId || !chatbotKey || !sessionId) return;
