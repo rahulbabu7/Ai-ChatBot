@@ -1,10 +1,12 @@
 __pycache__
 chroma_db
 website_embeddings.json
-.venv
 .env
 .env.development
 .env.production
 ingest_pdf.py
 client_data
 docker-compose.yml
+.python-version
+pyproject.toml
+uv.lock
