@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import 'assets/scss/style.scss';
 import { API_URL } from '../../../config';
+import { useAuth } from '../../../hooks/useAuth';
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { token } = useAuth();
 
   const [clientName, setClientName] = useState('');
   const [allowedDomain, setDomain] = useState('');
@@ -28,8 +30,6 @@ const Dashboard = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewType, setViewType] = useState(''); // 'qa' or 'pdf'
   const [viewContent, setViewContent] = useState(null);
-
-  const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
 
   useEffect(() => {
     if (!token) {
@@ -310,9 +310,28 @@ const Dashboard = () => {
 
     try {
       const endpoint = contentType === 'qa' ? '/client/delete-qa/me' : '/client/delete-pdf/me';
-      await call(endpoint, { method: 'DELETE' });
+      const data = await call(endpoint, { method: 'DELETE' });
+      
       setShowViewModal(false);
       setViewContent(null);
+      
+      // Handle re-embedding task if returned
+      if (data.re_embedding?.task_id) {
+        setLog(`${contentType.toUpperCase()} deleted successfully!\n\n` + 
+               `Re-embedding Task: ${data.re_embedding.task_id}\n` + 
+               `Status: ${data.re_embedding.status}\n` + 
+               `Message: ${data.re_embedding.message}\n` + 
+               `Remaining sources: ${data.re_embedding.remaining_sources?.join(', ') || 'none'}`);
+        
+        // Start polling the re-embedding task
+        pollTaskStatus(data.re_embedding.task_id);
+      } else {
+        setLog(`${contentType.toUpperCase()} deleted successfully!\n\n` + 
+               (data.message || 'No re-embedding needed (no other sources remain)'));
+      }
+      
+      // Refresh tasks to show the new re-embedding task
+      setTimeout(fetchClientTasks, 1000);
     } catch (e) {
       console.error(`Failed to delete ${contentType}:`, e);
     }
@@ -350,9 +369,6 @@ const Dashboard = () => {
 
   const refreshTasks = () => fetchClientTasks();
 
-  if (!token) {
-    return <div className="text-center mt-10 text-red-600">Please login to access the dashboard.</div>;
-  }
 
   return (
     <div className="container mt-4">

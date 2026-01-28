@@ -10,12 +10,13 @@ from backend.database import get_session
 from backend.models import User, Chat
 from backend.schemas import ChatRequest
 from backend.auth_utils import get_client_from_header
+from backend.routes.websockets import manager
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHATBOT_LLM_DIR = os.path.abspath(os.path.join(BASE_DIR, "../../Chatbot/llm"))
 sys.path.append(CHATBOT_LLM_DIR)
 
-from llm_service import chat_with_model, explain_context
+from llm_service import chat_with_model, explain_context, get_conversation_state, reset_conversation, clear_session
 
 router = APIRouter(
     prefix='/client',
@@ -31,6 +32,12 @@ async def client_chat(
     session: AsyncSession = Depends(get_session),
     x_chatbot_key: str = Header(None)
 ):
+    """Chat endpoint with session management and response time tracking"""
+    import time
+
+    # Start timing
+    start_time = time.time()
+
     # Validate client + chatbot_key
     stmt = select(User).where(
         User.client_id == client_id,
@@ -42,8 +49,8 @@ async def client_chat(
     if not client:
         raise HTTPException(status_code=403, detail="Invalid client or key")
 
-    # Ensure session_id
-    session_id = req.session_id or str(uuid.uuid4())
+    # Use provided session_id or create new one
+    chatbot_session_id = req.session_id or str(uuid.uuid4())
 
     # Capture user-agent and IP address
     user_agent = request.headers.get("user-agent", "unknown")
@@ -60,49 +67,89 @@ async def client_chat(
     # Store user message
     user_chat = Chat(
         client_id=client_id,
-        session_id=session_id,
+        session_id=chatbot_session_id,
         role="user",
         message=req.message,
         user_agent=user_agent,
         country_code=country_code,
-        admin_override=0,  # int, not bool
-        is_active=1  # int, not bool
+        admin_override=0,
+        is_active=1
     )
     session.add(user_chat)
     await session.commit()
+    await session.refresh(user_chat)  # ← IMPORTANT: Get the database ID
 
-    # Generate chatbot reply
-    bot_response = chat_with_model(client_id, req.message)
+    # Store the user message ID
+    user_message_id = user_chat.id
 
-    # Extract just the answer text from the response dictionary
+    # Generate chatbot reply with session context
+    bot_response = chat_with_model(
+        client_id=client_id,
+        query=req.message,
+        session_id=chatbot_session_id,
+        include_history=True,
+        enable_clarifications=True
+    )
+
+    response_time = time.time() - start_time
+
+    # Extract answer from response
     bot_reply = (
         bot_response.get("answer", "I'm sorry, I couldn't generate a response.")
         if isinstance(bot_response, dict)
         else str(bot_response)
     )
 
-    # Store assistant reply
+    # Store assistant reply with response time
     assistant_chat = Chat(
         client_id=client_id,
-        session_id=session_id,
+        session_id=chatbot_session_id,
         role="assistant",
         message=bot_reply,
         user_agent=user_agent,
         country_code=country_code,
-        admin_override=0,  # int, not bool
-        is_active=1  # int, not bool
+        admin_override=0,
+        is_active=1,
+        response_time=response_time
     )
     session.add(assistant_chat)
     await session.commit()
+    await session.refresh(assistant_chat)  # ← IMPORTANT: Get the database ID
 
-    # Return the response with session_id and bot reply
+    # Store the bot message ID
+    bot_message_id = assistant_chat.id
+
+    # Broadcast chatbot reply to admin via WebSocket
+    await manager.send_to_admin(chatbot_session_id, {
+        "type": "new_bot_message",
+        "session_id": chatbot_session_id,
+        "message": {
+            "id": assistant_chat.id,
+            "role": "assistant",
+            "message": bot_reply,
+            "timestamp": assistant_chat.created_at.isoformat().replace('+00:00', 'Z') if assistant_chat.created_at else None,
+            "admin_override": False,
+            "response_time": response_time
+        }
+    })
+
+    # 🔥 CRITICAL FIX: Return message IDs so frontend can use real database IDs
     return {
-        "session_id": session_id,
+        "session_id": bot_response.get("session_id", chatbot_session_id),
         "reply": bot_reply,
-        "confidence": bot_response.get("confidence") if isinstance(bot_response, dict) else None,
-        "type": bot_response.get("type") if isinstance(bot_response, dict) else None
+        "user_message_id": user_message_id,      # ← ADD THIS
+        "message_id": bot_message_id,            # ← ADD THIS
+        "admin_override": False,                  # ← ADD THIS (not admin)
+        "confidence": bot_response.get("confidence"),
+        "type": bot_response.get("type"),
+        "needs_clarification": bot_response.get("needs_clarification", False),
+        "clarification_questions": bot_response.get("clarification_questions", []),
+        "follow_up_question": bot_response.get("follow_up_question"),
+        "probing_questions": bot_response.get("probing_questions", []),
+        "sources": bot_response.get("sources", []),
+        "processing_time": bot_response.get("processing_time", response_time),
+        "metadata": bot_response.get("metadata", {})
     }
-
 
 @router.post("/context/{client_id}")
 async def context_endpoint(
@@ -111,6 +158,7 @@ async def context_endpoint(
     session: AsyncSession = Depends(get_session),
     x_chatbot_key: str = Header(None)
 ):
+    """Debug endpoint to see retrieved context"""
     # Validate client + chatbot_key
     stmt = select(User).where(
         User.client_id == client_id,
@@ -125,7 +173,6 @@ async def context_endpoint(
     # Fetch and explain context for the user
     ctx = explain_context(client_id, req.message)
 
-    # Return context or a default message if no context found
     return {"context": ctx or "No relevant context found."}
 
 
@@ -142,10 +189,10 @@ async def get_sessions(
             .distinct()
             .order_by(Chat.created_at.desc())
         )
-        
+
         result = await session.execute(stmt)
         sessions = result.scalars().all()
-        
+
         return {"sessions": sessions}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sessions: {str(e)}")
@@ -157,11 +204,12 @@ async def get_chats(
     session: AsyncSession = Depends(get_session),
     client_id: str = Depends(get_client_from_header)
 ):
+    """Fetch chats for a specific session"""
     # Fetch chats for the session
     stmt = select(Chat).where(
         Chat.client_id == client_id,
         Chat.session_id == session_id,
-        Chat.is_active == 1  # int, not bool
+        Chat.is_active == 1
     ).order_by(Chat.created_at.asc())
 
     result = await session.execute(stmt)
@@ -179,9 +227,81 @@ async def get_chats(
             "country_code": chat.country_code,
             "admin_override": chat.admin_override,
             "is_active": chat.is_active,
-            "created_at": chat.created_at.isoformat() if chat.created_at else None
+            "created_at": chat.created_at.isoformat().replace('+00:00', 'Z') if chat.created_at else None
         }
         for chat in chats
     ]
 
     return {"chats": chats_data}
+
+
+@router.get("/conversation-state/{client_id}")
+async def get_conversation_state_endpoint(
+    client_id: str,
+    session_id: str,
+    session: AsyncSession = Depends(get_session),
+    x_chatbot_key: str = Header(None)
+):
+    """Get current conversation state and summary"""
+    # Validate client + chatbot_key
+    stmt = select(User).where(
+        User.client_id == client_id,
+        User.chatbot_key == x_chatbot_key
+    )
+    result = await session.execute(stmt)
+    client = result.scalar_one_or_none()
+
+    if not client:
+        raise HTTPException(status_code=403, detail="Invalid client or key")
+
+    # Get conversation state from LLM service
+    state = get_conversation_state(client_id, session_id)
+    return state
+
+
+@router.post("/reset-conversation/{client_id}")
+async def reset_conversation_endpoint(
+    client_id: str,
+    session_id: str,
+    session: AsyncSession = Depends(get_session),
+    x_chatbot_key: str = Header(None)
+):
+    """Reset conversation history for a session"""
+    # Validate client + chatbot_key
+    stmt = select(User).where(
+        User.client_id == client_id,
+        User.chatbot_key == x_chatbot_key
+    )
+    result = await session.execute(stmt)
+    client = result.scalar_one_or_none()
+
+    if not client:
+        raise HTTPException(status_code=403, detail="Invalid client or key")
+
+    # Reset conversation in LLM service
+    result = reset_conversation(client_id, session_id)
+    return result
+
+
+@router.delete("/clear-session/{client_id}")
+async def clear_session_endpoint(
+    client_id: str,
+    session_id: str,
+    session: AsyncSession = Depends(get_session),
+    x_chatbot_key: str = Header(None)
+):
+    """Completely remove a session from memory"""
+    # Validate client + chatbot_key
+    stmt = select(User).where(
+        User.client_id == client_id,
+        User.chatbot_key == x_chatbot_key
+    )
+    result = await session.execute(stmt)
+    client = result.scalar_one_or_none()
+
+    if not client:
+        raise HTTPException(status_code=403, detail="Invalid client or key")
+
+    # Clear session from LLM service
+    result = clear_session(client_id, session_id)
+    return result

@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Globe, Plus, Check, AlertCircle, Copy, ExternalLink, Trash2 } from 'lucide-react';
 import 'assets/scss/style.scss';
 import { API_URL } from '../../../config';
+import { useAuth } from '../../../hooks/useAuth';
 const Domain = () => {
+  const { token } = useAuth();
+  
   const [domains, setDomains] = useState([]);
   const [newDomain, setNewDomain] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -10,15 +13,7 @@ const Domain = () => {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [showIntegrationCode, setShowIntegrationCode] = useState(false);
 
-  // Get JWT token from storage
-  const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
-
   useEffect(() => {
-    if (!token) {
-      setMessage({ type: 'error', text: 'Please login first to manage your domains.' });
-      setIsLoading(false);
-      return;
-    }
     fetchClientDomains();
   }, [token]);
 
@@ -135,12 +130,6 @@ const Domain = () => {
       </div>
     );
 
-  if (!token)
-    return (
-      <div className="container mt-4">
-        <div className="alert alert-danger text-center">Please login first to manage your domains.</div>
-      </div>
-    );
 
   return (
     <div className="container mt-4">
@@ -256,7 +245,12 @@ const Domain = () => {
                         </div>
                         <div className="flex-grow-1">
                           <h6 className="card-title mb-1">{domain.domain}</h6>
-                          <small className="text-muted">Registered on {new Date(domain.created_at).toLocaleDateString()}</small>
+                          <small className="text-muted">Registered on {new Date(domain.created_at).toLocaleDateString('en-IN', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                            timeZone: 'Asia/Kolkata'
+                          })}</small>
                         </div>
                       </div>
                       <div className="d-flex align-items-center gap-2">

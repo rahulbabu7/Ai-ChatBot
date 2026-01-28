@@ -2,6 +2,9 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../../config';
+import { useAuth } from '../../../hooks/useAuth';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 // react-bootstrap
 import Col from 'react-bootstrap/Col';
@@ -20,6 +23,8 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarEleme
 
 export default function DefaultPage() {
   const navigate = useNavigate();
+  const { token } = useAuth();
+
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState('');
   const [chats, setChats] = useState([]);
@@ -39,7 +44,6 @@ export default function DefaultPage() {
   const [statsLoading, setStatsLoading] = useState(false);
 
   const chatContainerRef = useRef(null);
-  const token = localStorage.getItem('jwt_token') || sessionStorage.getItem('jwt_token');
 
   // Fetch dashboard stats (all metrics in one call)
   useEffect(() => {
@@ -54,7 +58,7 @@ export default function DefaultPage() {
           }
         });
 
-        console.log('📊 Dashboard stats:', res.data);
+        // console.log('📊 Dashboard stats:', res.data);
 
         setTotalSessions(res.data.total_sessions);
         setTodaySessions(res.data.today_sessions);
@@ -111,7 +115,7 @@ export default function DefaultPage() {
           }
         });
 
-        console.log('📈 Daily stats:', res.data);
+        // console.log('📈 Daily stats:', res.data);
         setDailyStats(res.data.daily_stats || []);
       } catch (error) {
         console.error('❌ Failed to fetch daily stats:', error);
@@ -235,9 +239,6 @@ export default function DefaultPage() {
     }
   };
 
-  if (!token) {
-    return <p className="text-center mt-5">❌ You must log in to view this page.</p>;
-  }
 
   return (
     <>
@@ -310,19 +311,27 @@ export default function DefaultPage() {
                     const secondsAgo = Math.floor((now - lastSeenDate) / 1000);
 
                     return (
-                      <ListGroup.Item 
-                        key={idx} 
+                      <ListGroup.Item
+                        key={idx}
                         className="d-flex justify-content-between align-items-start"
                         action
-                        onClick={() => navigate(`/client-chat/${user.session_id}`)}
+                        onClick={() => {
+                          // console.log('🔍 Navigating to session:', user.session_id);
+                          // console.log('🔍 Full session ID length:', user.session_id.length);
+                          // FIX: Use FULL session_id, not truncated
+                          navigate(`/client-chat/${user.session_id}`);
+                        }}
                         style={{ cursor: 'pointer' }}
                       >
                         <div className="flex-grow-1">
                           <div className="d-flex align-items-center mb-1">
                             <span className="badge bg-success me-2">●</span>
                             <strong>Session:</strong>
+                            {/* Display truncated but NAVIGATE with full ID */}
                             <code className="ms-2 small">{user.session_id.substring(0, 30)}...</code>
-                            <Badge bg="primary" className="ms-2">Click to Chat</Badge>
+                            <Badge bg="primary" className="ms-2">
+                              Click to Chat
+                            </Badge>
                           </div>
                           <div className="small text-muted">
                             <div>📍 IP: {user.ip}</div>
@@ -352,8 +361,8 @@ export default function DefaultPage() {
               <h5 className="mb-0">Daily Analytics (Last 7 Days)</h5>
               {!statsLoading && dailyStats.length > 0 && (
                 <small className="text-muted">
-                  Total: {dailyStats.reduce((sum, s) => sum + s.visitors, 0)} visitors,{' '}
-                  {dailyStats.reduce((sum, s) => sum + s.chats, 0)} chats
+                  Total: {dailyStats.reduce((sum, s) => sum + s.visitors, 0)} visitors, {dailyStats.reduce((sum, s) => sum + s.chats, 0)}{' '}
+                  chats
                 </small>
               )}
             </Card.Header>
@@ -402,7 +411,7 @@ export default function DefaultPage() {
                         <span className="text-truncate">{s.substring(0, 25)}...</span>
                         {selectedSession === s && <Badge bg="primary">Viewing</Badge>}
                       </ListGroup.Item>
-                      
+
                       {/* {selectedSession === s && (
                         <Button
                           variant="success"
@@ -426,9 +435,7 @@ export default function DefaultPage() {
         <Col md={8} xl={9}>
           <Card className="shadow-sm h-100">
             <Card.Header className="d-flex justify-content-between align-items-center">
-              <h5 className="mb-0">
-                {selectedSession ? `Chat: ${selectedSession.substring(0, 30)}...` : 'Select a session'}
-              </h5>
+              <h5 className="mb-0">{selectedSession ? `Chat: ${selectedSession.substring(0, 30)}...` : 'Select a session'}</h5>
               {/* {selectedSession && (
                 <Button
                   variant="success"
@@ -462,10 +469,21 @@ export default function DefaultPage() {
                     }`}
                     style={{ maxWidth: '75%' }}
                   >
-                    <div className="mb-2">{chat.message}</div>
+                    <div className="mb-2">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {chat.message}
+                      </ReactMarkdown>
+                    </div>
                     <div className={`small mt-2 ${chat.role === 'user' ? 'text-white-50' : 'text-muted'}`}>
                       <div>
-                        <strong>[{chat.role}]</strong> {new Date(chat.created_at).toLocaleString()}
+                        <strong>[{chat.role}]</strong> {new Date(chat.created_at).toLocaleString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          timeZone: 'Asia/Kolkata',
+                          timeZoneName: 'short'
+                        })}
                       </div>
                       <div className="text-truncate">
                         {chat.country_code && `🌍 ${chat.country_code} | `}

@@ -1,5 +1,6 @@
 // src/views/reporting/ChatVolume.jsx
 import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../../hooks/useAuth';
 import {
   Box,
   Card,
@@ -101,13 +102,13 @@ const createWebSocketService = (onDataUpdate, onStatusChange) => {
       ws = new WebSocket('ws://localhost:3001/api/chat-volume/live');
       
       ws.onopen = () => {
-        console.log('WebSocket connected');
+        // console.log('WebSocket connected');
         reconnectAttempts = 0;
         onStatusChange('connected');
       };
       
       ws.onclose = (event) => {
-        console.log('WebSocket disconnected:', event);
+        // console.log('WebSocket disconnected:', event);
         onStatusChange('disconnected');
         
         // Attempt reconnection
@@ -154,6 +155,8 @@ const createWebSocketService = (onDataUpdate, onStatusChange) => {
 };
 
 const ChatVolume = () => {
+  useAuth();
+  
   const [historicalData, setHistoricalData] = useState([]);
   const [realTimeData, setRealTimeData] = useState([]);
   const [loading, setLoading] = useState(true);

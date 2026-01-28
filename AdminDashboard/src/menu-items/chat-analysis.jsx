@@ -19,17 +19,10 @@ const chatAnalysis = {
           breadcrumbs: false
         },
         {
-          id: 'chat-volume',
-          title: 'Chat Volume',
+          id: 'first-response-time',
+          title: 'First Response Time',
           type: 'item',
-          url: '/chat-volume',
-          breadcrumbs: false
-        },
-        {
-          id: 'missed-chats',
-          title: 'Missed Chats',
-          type: 'item',
-          url: '/missed-chats',
+          url: '/first-response-time',
           breadcrumbs: false
         }
       ]

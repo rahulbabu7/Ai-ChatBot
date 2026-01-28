@@ -203,6 +203,11 @@ export default function Header() {
     setSuccess('');
   };
 
+  // Navigation handlers for settings sub-buttons
+  const navigateToPage = (path) => {
+    navigate(path);
+  };
+
   return (
     <>
       <header className="pc-header">
@@ -216,11 +221,13 @@ export default function Header() {
           </Nav>
 
           <Nav className="list-unstyled d-flex align-items-center ms-auto">
+            {/* User Profile Dropdown */}
             <Dropdown align="end">
               <Dropdown.Toggle className="pc-head-link p-0 border-0 bg-transparent" variant="link" id="user-dropdown">
-                <Image src={Img2} alt="user-avatar" style={{ width: '35px', height: '35px', cursor: 'pointer' }} roundedCircle />
+                {/* Avatar image removed from dropdown toggle - replaced with user icon */}
+                <i className="ph ph-user-circle" style={{ fontSize: '1.5rem', cursor: 'pointer' }} />
               </Dropdown.Toggle>
-
+              
               <Dropdown.Menu className="dropdown-user-profile pc-h-dropdown p-0 overflow-hidden">
                 <Dropdown.Header className="bg-primary">
                   <Stack direction="horizontal" gap={2} className="my-2 align-items-center">
@@ -233,11 +240,12 @@ export default function Header() {
                 </Dropdown.Header>
 
                 <div className="dropdown-body p-2">
-                  <Dropdown.Item as={Link} to="#" className="justify-content-start">
-                    <i className="ph ph-gear me-2" /> Settings
+                  <Dropdown.Header className="fw-bold"> Settings</Dropdown.Header>
+                  <Dropdown.Item as="button" className="justify-content-start" onClick={() => navigateToPage('/settings/profile')}>
+                  <i className="ph ph-user me-2" /> Profile Settings
                   </Dropdown.Item>
-                  <Dropdown.Item as="button" className="justify-content-start" onClick={handleShare}>
-                    <i className="ph ph-share-network me-2" /> Share
+                  <Dropdown.Item as="button" className="justify-content-start" onClick={() => navigateToPage('/settings/shortcuts')}>
+                  <i className="ph ph-keyboard me-2" /> Shortcuts
                   </Dropdown.Item>
                   <Dropdown.Item as="button" className="justify-content-start" onClick={handleChangePassword}>
                     <i className="ph ph-lock-key me-2" /> Change Password
@@ -251,7 +259,7 @@ export default function Header() {
             </Dropdown>
           </Nav>
         </div>
-      </header>
+      </header>  
 
       {/* Share Modal */}
       <Modal show={showShareModal} onHide={() => setShowShareModal(false)} centered>

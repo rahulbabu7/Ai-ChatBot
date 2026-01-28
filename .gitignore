@@ -7,3 +7,6 @@ website_embeddings.json
 ingest_pdf.py
 client_data
 docker-compose.yml
+.python-version
+pyproject.toml
+uv.lock

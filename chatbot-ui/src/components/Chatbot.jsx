@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { MessageCircle } from "lucide-react";
 import ChatbotWindow from "./ChatbotWindow";
 import { API_URL } from "../config.js";
+import ReactMarkdown from 'react-markdown';
 
 const Chatbot = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -14,30 +15,20 @@ const Chatbot = () => {
 
   const heartbeatInterval = useRef(null);
 
-  // Generate or retrieve session ID
-  useEffect(() => {
-    let storedSessionId = sessionStorage.getItem("chatbot_session_id");
-    if (!storedSessionId) {
-      storedSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      sessionStorage.setItem("chatbot_session_id", storedSessionId);
-    }
-    setSessionId(storedSessionId);
-  }, []);
-
-  // Auto-detect domain and fetch client credentials
+  // 🔥 FIX: Generate or retrieve session ID - USE LOCALSTORAGE CONSISTENTLY
   useEffect(() => {
     const fetchClientCredentials = async () => {
       try {
         setIsLoading(true);
         const params = new URLSearchParams(window.location.search);
-        // const clientDomain = params.get("domain");
-        const currentDomain = window.location.hostname;
+        const clientDomain = params.get("domain");
+         const currentDomain = window.location.hostname;
 
-        console.log("Detecting domain:", currentDomain);
+        // console.log("🌐 Detecting domain:", currentDomain);
 
         const response = await fetch(
-          // `${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(clientDomain)}`,
-          `${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(currentDomain)}`,
+          //`${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(clientDomain)}`,
+           `${API_URL}/client/lookup-by-domain?domain=${encodeURIComponent(currentDomain)}`,
         );
 
         if (!response.ok) {
@@ -53,11 +44,53 @@ const Chatbot = () => {
         setClientId(data.client_id);
         setChatbotKey(data.chatbot_key);
         setClientName(data.client_name);
+
+        // 🔥 NOW generate/retrieve session ID after we have client_id
+        const storageKey = `chatbot_session_${data.client_id}`;
+        let storedData = localStorage.getItem(storageKey);
+        let currentSessionId;
+
+        if (storedData) {
+          try {
+            const parsed = JSON.parse(storedData);
+            const sessionAge = Date.now() - parsed.timestamp;
+            const ONE_DAYS = 1 * 24 * 60 * 60 * 1000;
+
+            if (sessionAge > ONE_DAYS) {
+              // console.log("🗑️ Session expired, creating new one");
+              localStorage.removeItem(storageKey);
+              currentSessionId = null;
+            } else {
+              currentSessionId = parsed.sessionId;
+              // console.log("✅ Using existing session:", currentSessionId);
+            }
+          } catch (e) {
+            console.warn("⚠️ Invalid session data, creating new");
+            currentSessionId = null;
+          }
+        }
+
+        // Create new session if needed
+        if (!currentSessionId) {
+          currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          const sessionData = {
+            sessionId: currentSessionId,
+            timestamp: Date.now(),
+          };
+          localStorage.setItem(storageKey, JSON.stringify(sessionData));
+          // console.log("✨ Created new session:", currentSessionId);
+        }
+
+        setSessionId(currentSessionId);
         setError("");
 
-        console.log("✅ Chatbot configured for:", data.client_name);
+        // console.log("✅ Chatbot configured:", {
+        //   clientName: data.client_name,
+        //   clientId: data.client_id,
+        //   sessionId: currentSessionId
+        // });
       } catch (err) {
-        console.error("Failed to configure chatbot:", err);
+        // console.error("❌ Failed to configure chatbot:", err);
         setError(err.message);
       } finally {
         setIsLoading(false);
@@ -66,13 +99,43 @@ const Chatbot = () => {
 
     fetchClientCredentials();
   }, []);
+  // In Chatbot.jsx, add this useEffect after your existing useEffects:
 
+  useEffect(() => {
+    // Notify parent window about chatbot state
+    const sendSizeUpdate = () => {
+      if (window.parent !== window) {
+        window.parent.postMessage({
+          type: 'chatbot-resize',
+          isOpen: isOpen,
+          width: isOpen ? 400 : 80,
+          height: isOpen ? 600 : 80
+        }, '*');
+      }
+    };
+
+    sendSizeUpdate();
+  }, [isOpen]);
+
+  // Also add this on component mount to set initial size
+  useEffect(() => {
+    if (window.parent !== window) {
+      window.parent.postMessage({
+        type: 'chatbot-resize',
+        isOpen: false,
+        width: 80,
+        height: 80
+      }, '*');
+    }
+  }, []);
   // Send heartbeat when chatbot is open
   useEffect(() => {
     if (!clientId || !chatbotKey || !sessionId) return;
 
     const sendHeartbeat = async (isOpen) => {
       try {
+        // console.log(`💓 Heartbeat: ${isOpen ? 'OPEN' : 'CLOSED'} - Session: ${sessionId.substring(0, 20)}...`);
+
         await fetch(`${API_URL}/client/heartbeat/${clientId}`, {
           method: "POST",
           headers: {
@@ -85,7 +148,7 @@ const Chatbot = () => {
           }),
         });
       } catch (err) {
-        console.error("Heartbeat failed:", err);
+        console.error("❌ Heartbeat failed:", err);
       }
     };
 
@@ -141,7 +204,7 @@ const Chatbot = () => {
               }),
             });
           } catch (err) {
-            console.error("Heartbeat failed:", err);
+            console.error("❌ Heartbeat failed:", err);
           }
         };
 
@@ -164,6 +227,7 @@ const Chatbot = () => {
       );
       return;
     }
+    // console.log("🔄 Toggling chat. Session ID:", sessionId);
     setIsOpen(!isOpen);
   };
 

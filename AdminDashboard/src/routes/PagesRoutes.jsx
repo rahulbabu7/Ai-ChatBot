@@ -13,6 +13,12 @@ const AdminChat = Loadable(lazy(()=>import('views/navigation/dashboard/AdminChat
 const Duration = Loadable(lazy(() => import('views/reporting/Duration')));
 const MissedChats = Loadable(lazy(() => import('views/reporting/MissedChats')));
 const ChatVolume = Loadable(lazy(() => import('views/reporting/ChatVolume')));
+const FirstResponseTime = Loadable(lazy(() => import('views/reporting/FirstResponseTime')));
+const UserSatisfaction = Loadable(lazy(() => import('views/reporting/UserSatisfaction')));
+
+// Settings Pages - Add these imports
+const ShortcutsPage = Loadable(lazy(() => import('views/settings/Shortcuts')));
+const ProfileSettingsPage = Loadable(lazy(() => import('views/settings/ProfileSettings')));
 
 const PagesRoutes = {
   path: '/',
@@ -36,7 +42,13 @@ const PagesRoutes = {
         { path: 'client-chat/:sessionId', element: <AdminChat /> },
         { path: 'duration', element: <Duration /> },
         { path: 'missed-chats', element: <MissedChats /> },
-        { path: 'chat-volume', element: <ChatVolume /> }
+        { path: 'chat-volume', element: <ChatVolume /> },
+        { path: 'first-response-time', element: <FirstResponseTime /> },
+        { path: 'user-satisfaction', element: <UserSatisfaction /> },
+        
+        // Settings Routes - Add these
+        { path: 'settings/shortcuts', element: <ShortcutsPage /> },
+        { path: 'settings/profile', element: <ProfileSettingsPage /> },
       ]
     }
   ]
