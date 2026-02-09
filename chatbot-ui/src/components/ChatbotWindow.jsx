@@ -417,6 +417,31 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       }
 
       const data = await res.json();
+      
+      // 🔥 NEW: Handle form collection
+      if (data.form_active) {
+        console.log("📋 Form collection in progress");
+        // You can show a form indicator in the UI
+      }
+      
+      if (data.form_status === 'completed' && data.collected_data) {
+        console.log("✅ Form completed! Data:", data.collected_data);
+        
+        // 🔥 IMPORTANT: Send the collected data to your backend
+        await fetch(`${API_URL}/client/save-lead`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Chatbot-Key": chatbotKey,
+          },
+          body: JSON.stringify({
+            session_id: currentSessionId,
+            client_id: clientId,
+            lead_data: data.collected_data,
+            form_type: data.form_type || 'contact'
+          }),
+        });
+      }
       // console.log("📤 Received response from backend:", data);
 
       if (data.session_id && data.session_id !== currentSessionId) {

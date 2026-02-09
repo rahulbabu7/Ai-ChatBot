@@ -63,3 +63,13 @@ class ClientProfileUpdate(BaseModel):
     email: Optional[str] = None
     mobile_number: Optional[str] = None
     chatbot_name: Optional[str] = None
+
+class LeadDataRequest(BaseModel):
+    session_id: str
+    client_id: str
+    lead_data: dict
+    form_type: str
+
+class UpdateLeadStatusRequest(BaseModel):
+    status: str
+    notes: Optional[str] = None
