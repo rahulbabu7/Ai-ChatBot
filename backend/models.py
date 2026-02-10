@@ -5,11 +5,10 @@ from typing import Optional, List
 import uuid
 
 from sqlmodel import SQLModel, Field, select
-from sqlalchemy import Column, String, Integer, Text, DateTime, Index, Float, ForeignKey
 from sqlalchemy.orm import relationship  # Use SQLAlchemy's relationship
 from sqlalchemy.sql import func
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from sqlalchemy import Column, String, Integer, Text, DateTime, Index, Float, ForeignKey, JSON
 
 
 def utc_now() -> datetime:
@@ -173,6 +172,86 @@ class Shortcut(SQLModel, table=True):
         sa_column=Column(DateTime, nullable=False, server_default=func.now()),
     )
     is_active: int = Field(default=1)
+
+
+
+class Lead(SQLModel, table=True):
+    """Store collected lead data from chatbot forms"""
+    __tablename__ = "leads"
+    __table_args__ = (
+        Index("idx_leads_client", "client_id"),
+        Index("idx_leads_session", "session_id"),
+        Index("idx_leads_email", "email"),
+        Index("idx_leads_created", "created_at"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    client_id: str = Field(sa_column=Column(String(100), nullable=False, index=True))
+    session_id: str = Field(sa_column=Column(String(100), nullable=False, index=True))
+
+    # Contact information
+    name: Optional[str] = Field(default=None, sa_column=Column(String(255)))
+    email: Optional[str] = Field(default=None, sa_column=Column(String(255), index=True))
+    phone: Optional[str] = Field(default=None, sa_column=Column(String(50)))
+    company: Optional[str] = Field(default=None, sa_column=Column(String(255)))
+    message: Optional[str] = Field(default=None, sa_column=Column(Text))
+
+    # Form metadata
+    form_type: str = Field(sa_column=Column(String(50), nullable=False))  # 'contact', 'demo_booking', etc.
+    preferred_time: Optional[str] = Field(default=None, sa_column=Column(String(50)))  # For demo bookings
+
+    # Additional data (store any extra fields as JSON)
+    extra_data: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    # Tracking
+    country_code: Optional[str] = Field(default="unknown", sa_column=Column(String(10)))
+    user_agent: Optional[str] = Field(default=None, sa_column=Column(String(255)))
+
+    # Status tracking
+    status: str = Field(default="new", sa_column=Column(String(50), nullable=False))  # 'new', 'contacted', 'converted', 'closed'
+    contacted_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    notes: Optional[str] = Field(default=None, sa_column=Column(Text))
+
+    # Timestamps
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime, nullable=False, server_default=func.utc_timestamp()),
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(
+            DateTime,
+            nullable=False,
+            server_default=func.now(),
+            onupdate=func.now(),
+        ),
+    )
+
+    def to_dict_ist(self) -> dict:
+        """Return dict with IST timestamps"""
+        from backend.models import utc_to_ist
+
+        return {
+            "id": self.id,
+            "client_id": self.client_id,
+            "session_id": self.session_id,
+            "name": self.name,
+            "email": self.email,
+            "phone": self.phone,
+            "company": self.company,
+            "message": self.message,
+            "form_type": self.form_type,
+            "preferred_time": self.preferred_time,
+            "extra_data": self.extra_data,
+            "status": self.status,
+            "contacted_at": utc_to_ist(self.contacted_at).isoformat() if self.contacted_at else None,
+            "notes": self.notes,
+            "country_code": self.country_code,
+            "user_agent": self.user_agent,
+            "created_at": utc_to_ist(self.created_at).isoformat() if self.created_at else None,
+            "updated_at": utc_to_ist(self.updated_at).isoformat() if self.updated_at else None,
+        }
+
 
 
 # -----------------------------------------------------------------------------
@@ -418,4 +497,156 @@ async def set_chatbot_name(session: AsyncSession, client_id: str, chatbot_name: 
     except Exception as e:
         await session.rollback()
         print(f"Error setting chatbot name: {e}")
+        return False
+
+
+
+# -----------------------------------------------------------------------------
+# Lead Helper Functions (Add these after the Lead model)
+# -----------------------------------------------------------------------------
+
+async def save_lead_to_db(
+    session,
+    client_id: str,
+    session_id: str,
+    lead_data: dict,
+    form_type: str,
+    country_code: str = "unknown",
+    user_agent: str = None
+) -> Optional[Lead]:
+    """
+    Save lead data to database
+
+    Args:
+        session: AsyncSession
+        client_id: Client identifier
+        session_id: Chat session identifier
+        lead_data: Dictionary containing form data
+        form_type: Type of form (contact, demo_booking, etc.)
+        country_code: User's country code
+        user_agent: User's browser user agent
+
+    Returns:
+        Lead object if successful, None otherwise
+    """
+    try:
+        # Extract known fields
+        name = lead_data.get('name')
+        email = lead_data.get('email')
+        phone = lead_data.get('phone')
+        company = lead_data.get('company')
+        message = lead_data.get('message')
+        preferred_time = lead_data.get('preferred_time')
+
+        # Store any extra fields in extra_data
+        known_fields = {'name', 'email', 'phone', 'company', 'message', 'preferred_time'}
+        extra_data = {k: v for k, v in lead_data.items() if k not in known_fields}
+
+        lead = Lead(
+            client_id=client_id,
+            session_id=session_id,
+            name=name,
+            email=email,
+            phone=phone,
+            company=company,
+            message=message,
+            form_type=form_type,
+            preferred_time=preferred_time,
+            extra_data=extra_data if extra_data else None,
+            country_code=country_code,
+            user_agent=user_agent,
+            status="new"
+        )
+
+        session.add(lead)
+        await session.commit()
+        await session.refresh(lead)
+
+        print(f"✅ Lead saved successfully: {lead.id} - {lead.email}")
+        return lead
+
+    except Exception as e:
+        await session.rollback()
+        print(f"❌ Error saving lead: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+async def get_leads_for_client(
+    session,
+    client_id: str,
+    status: Optional[str] = None,
+    limit: int = 100
+) -> list[dict]:
+    """
+    Get leads for a client
+
+    Args:
+        session: AsyncSession
+        client_id: Client identifier
+        status: Filter by status (optional)
+        limit: Maximum number of leads to return
+
+    Returns:
+        List of lead dictionaries with IST timestamps
+    """
+    from sqlmodel import select
+
+    try:
+        statement = select(Lead).where(Lead.client_id == client_id)
+
+        if status:
+            statement = statement.where(Lead.status == status)
+
+        statement = statement.order_by(Lead.created_at.desc()).limit(limit)
+
+        result = await session.execute(statement)
+        leads = result.scalars().all()
+
+        return [lead.to_dict_ist() for lead in leads]
+
+    except Exception as e:
+        print(f"❌ Error getting leads: {e}")
+        return []
+
+
+async def update_lead_status(
+    session,
+    lead_id: int,
+    status: str,
+    notes: Optional[str] = None
+) -> bool:
+    """
+    Update lead status
+
+    Args:
+        session: AsyncSession
+        lead_id: Lead ID
+        status: New status (new, contacted, converted, closed)
+        notes: Optional notes
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        lead = await session.get(Lead, lead_id)
+        if not lead:
+            return False
+
+        lead.status = status
+        if notes:
+            lead.notes = notes
+
+        if status == "contacted" and not lead.contacted_at:
+            lead.contacted_at = datetime.now(timezone.utc)
+
+        session.add(lead)
+        await session.commit()
+
+        return True
+
+    except Exception as e:
+        await session.rollback()
+        print(f"❌ Error updating lead status: {e}")
         return False

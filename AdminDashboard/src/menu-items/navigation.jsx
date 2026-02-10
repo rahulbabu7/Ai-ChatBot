@@ -14,7 +14,8 @@ const navigation = {
   children: [
     { id: 'dashboard', title: 'Dashboard', type: 'item', icon: icons.dashboard, url: '/' },
     { id: 'dashboard-client', title: 'Dashboard Client', type: 'item', icon: icons.layouts, url: '/dashboard' },
-    { id: 'domain', title: 'Domain', type: 'item', icon: icons.layouts, url: '/domain' }
+    { id: 'domain', title: 'Domain', type: 'item', icon: icons.layouts, url: '/domain' },
+    { id: 'leads', title: 'Leads Management', type: 'item', icon: icons.layouts, url: '/leads' },
   ]
 };
 
