@@ -1,18 +1,25 @@
+import logging
+import os
+import sys
+import uuid
+from typing import Optional
+
+import requests
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import Optional
-import uuid
-import requests
-import os
-import sys
+
 from backend.database import get_session
-from backend.models import User, Chat
-from backend.schemas import ChatRequest
+from backend.models import User, Chat, Lead, save_lead_to_db
+from backend.schemas import ChatRequest, LeadDataRequest
 from backend.auth_utils import get_client_from_header
 from backend.routes.websockets import manager
-from backend.schemas import LeadDataRequest
-from backend.models import User, Lead, save_lead_to_db
+from backend.security_monitor import security_monitor
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHATBOT_LLM_DIR = os.path.abspath(os.path.join(BASE_DIR, "../../Chatbot/llm"))
@@ -28,6 +35,7 @@ router = APIRouter(
 
 
 @router.post("/chat/{client_id}")
+@limiter.limit("20/minute")
 async def client_chat(
     client_id: str,
     req: ChatRequest,
@@ -54,6 +62,19 @@ async def client_chat(
 
     # Use provided session_id or create new one
     chatbot_session_id = req.session_id or str(uuid.uuid4())
+
+    # Check for suspicious input
+    if security_monitor.should_block_session(client_id, chatbot_session_id):
+        raise HTTPException(
+            status_code=429,
+            detail="Session blocked due to suspicious activity"
+        )
+
+    is_suspicious, pattern = security_monitor.check_suspicious_input(
+        req.message, chatbot_session_id, client_id
+    )
+    if is_suspicious:
+        logger.warning("Suspicious pattern '%s' from client=%s session=%s", pattern, client_id, chatbot_session_id)
 
     # Capture user-agent and IP address
     user_agent = request.headers.get("user-agent", "unknown")
@@ -313,6 +334,7 @@ async def clear_session_endpoint(
 
 
 @router.post("/save-lead")
+@limiter.limit("10/minute")
 async def save_lead(
     req: LeadDataRequest,
     request: Request,
@@ -338,11 +360,10 @@ async def save_lead(
 
         # Get country code (optional - reuse your existing logic)
         try:
-            import requests
             location_response = requests.get(f"https://ipinfo.io/{user_ip}/json", timeout=2)
             location_data = location_response.json()
             country_code = location_data.get("country", "Unknown")
-        except:
+        except Exception:
             country_code = "Unknown"
 
         # Save lead to database

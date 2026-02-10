@@ -19,7 +19,7 @@ BASE_DIR = Path(__file__).resolve().parent
 CHATBOT_LLM_DIR = os.path.abspath(os.path.join(BASE_DIR, "../../Chatbot/llm"))
 sys.path.append(CHATBOT_LLM_DIR)
 
-from llm_service import chat_with_model, UniversalRAGChatbot
+from llm_service import chat_with_model, UniversalRAGChatbot, invalidate_client_sessions
 
 router = APIRouter(
     prefix='/client',
@@ -29,6 +29,30 @@ router = APIRouter(
 # Configuration
 CLIENTS_DIR = (BASE_DIR / "../../client_data").resolve()
 CLIENTS_DIR.mkdir(exist_ok=True, parents=True)
+CHROMA_DIR = os.path.abspath(os.path.join(BASE_DIR, "../../ChromaDatabase/vector-database/chroma_db"))
+
+
+def _purge_chroma_by_source(client_id: str, source: str) -> int:
+    """Immediately delete all ChromaDB chunks with the given source metadata.
+
+    Returns the number of deleted chunks, or -1 on error.
+    """
+    try:
+        import chromadb
+        chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
+        collection = chroma_client.get_collection(client_id.lower())
+
+        # Get IDs of all documents matching this source
+        all_docs = collection.get(where={"source": source})
+        ids_to_delete = all_docs.get("ids", [])
+
+        if ids_to_delete:
+            collection.delete(ids=ids_to_delete)
+
+        return len(ids_to_delete)
+    except Exception as e:
+        print(f"⚠️ Failed to purge ChromaDB chunks for source={source}: {e}")
+        return -1
 
 
 # ============================================================================
@@ -670,13 +694,20 @@ async def delete_qa(
 
         os.remove(qa_path)
 
+        # Immediately purge Q&A chunks from ChromaDB so the chatbot stops using them
+        purged = _purge_chroma_by_source(client_id, "qa")
+
+        # Invalidate cached chat sessions so they pick up the updated collection
+        invalidate_client_sessions(client_id)
+
         # Check if other sources exist AFTER deletion
         has_website = os.path.exists(os.path.join(client_dir, "website_content.json"))
         has_pdf = os.path.exists(os.path.join(client_dir, "custom_pdf.txt"))
 
         result = {
             "success": True,
-            "message": "Q&A file deleted"
+            "message": "Q&A file deleted",
+            "chunks_purged": purged,
         }
 
         # Automatically trigger re-embedding if other sources exist
@@ -695,9 +726,8 @@ async def delete_qa(
         else:
             # No sources left - clear the entire collection
             try:
-                chroma_dir = os.path.abspath(os.path.join(BASE_DIR, "../../ChromaDatabase/vector-database/chroma_db"))
                 import chromadb
-                chroma_client = chromadb.PersistentClient(path=chroma_dir)
+                chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
                 chroma_client.delete_collection(client_id.lower())
                 result["message"] = "Q&A deleted and vector database cleared (no other sources remain)"
             except Exception as e:
@@ -737,6 +767,12 @@ async def delete_pdf(
         if not pdf_existed:
             raise HTTPException(status_code=404, detail="No PDF files found")
 
+        # Immediately purge PDF chunks from ChromaDB so the chatbot stops using them
+        purged = _purge_chroma_by_source(client_id, "pdf")
+
+        # Invalidate cached chat sessions so they pick up the updated collection
+        invalidate_client_sessions(client_id)
+
         # Check if other sources exist AFTER deletion
         has_website = os.path.exists(os.path.join(client_dir, "website_content.json"))
         has_qa = os.path.exists(os.path.join(client_dir, "custom_qa.json"))
@@ -744,6 +780,7 @@ async def delete_pdf(
         result = {
             "success": True,
             "deleted_files": deleted_files,
+            "chunks_purged": purged,
         }
 
         if errors:
@@ -765,9 +802,8 @@ async def delete_pdf(
         else:
             # No sources left - clear the entire collection
             try:
-                chroma_dir = os.path.abspath(os.path.join(BASE_DIR, "../../ChromaDatabase/vector-database/chroma_db"))
                 import chromadb
-                chroma_client = chromadb.PersistentClient(path=chroma_dir)
+                chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
                 chroma_client.delete_collection(client_id.lower())
                 result["message"] = "PDF deleted and vector database cleared (no other sources remain)"
             except Exception as e:
@@ -794,13 +830,20 @@ async def delete_website(
 
         os.remove(website_path)
 
+        # Immediately purge website chunks from ChromaDB so the chatbot stops using them
+        purged = _purge_chroma_by_source(client_id, "website")
+
+        # Invalidate cached chat sessions so they pick up the updated collection
+        invalidate_client_sessions(client_id)
+
         # Check if other sources exist AFTER deletion
         has_pdf = os.path.exists(os.path.join(client_dir, "custom_pdf.txt"))
         has_qa = os.path.exists(os.path.join(client_dir, "custom_qa.json"))
 
         result = {
             "success": True,
-            "message": "Website data deleted"
+            "message": "Website data deleted",
+            "chunks_purged": purged,
         }
 
         if has_pdf or has_qa:
@@ -817,9 +860,8 @@ async def delete_website(
                 result["re_embedding"]["remaining_sources"].append("Q&A")
         else:
             try:
-                chroma_dir = os.path.abspath(os.path.join(BASE_DIR, "../../ChromaDatabase/vector-database/chroma_db"))
                 import chromadb
-                chroma_client = chromadb.PersistentClient(path=chroma_dir)
+                chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
                 chroma_client.delete_collection(client_id.lower())
                 result["message"] = "Website data deleted and vector database cleared (no other sources remain)"
             except Exception as e:
@@ -867,13 +909,15 @@ async def clear_all_data(
 
         # Delete ChromaDB collection
         try:
-            chroma_dir = os.path.abspath(os.path.join(BASE_DIR, "../../ChromaDatabase/vector-database/chroma_db"))
             import chromadb
-            chroma_client = chromadb.PersistentClient(path=chroma_dir)
+            chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
             chroma_client.delete_collection(client_id.lower())
             deleted_items.append("vector database")
         except Exception as e:
             errors.append(f"Failed to delete vector database: {str(e)}")
+
+        # Invalidate cached chat sessions
+        invalidate_client_sessions(client_id)
 
         result = {
             "success": True,
