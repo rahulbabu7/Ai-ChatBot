@@ -156,7 +156,12 @@ def crawl_website_task(self, client_id: str, allowed_domain: str, start_url: str
     # Success
     run_async(db_update_task(task_id, "completed", f"Crawled pages saved to {output_file}"))
     logger.info(f"Playwright crawl completed for client {client_id}. Saved to {output_file}")
-    return {"client_id": client_id, "output_file": output_file, "source_type": "crawl"}
+
+    # Detect all existing sources so we don't wipe PDF data during re-embed
+    has_pdf = os.path.exists(os.path.join(client_dir, "custom_pdf.txt"))
+    source_type = "both" if has_pdf else "crawl"
+
+    return {"client_id": client_id, "output_file": output_file, "source_type": source_type}
 
 
 @celery_app.task(bind=True)
@@ -175,7 +180,7 @@ def run_embeddings_task(self, prev_result):
 
     # Use the enhanced embed_pipeline.py script
     script_path = os.path.abspath(os.path.join(BASE_DIR, "../Chatbot/processing/embed_pipeline.py"))
-    
+
     if not os.path.exists(script_path):
         err = f"Embedding script not found at {script_path}"
         logger.error(err)
@@ -191,7 +196,7 @@ def run_embeddings_task(self, prev_result):
     client_dir = os.path.join(CLIENTS_DIR, client_id)
     logs_dir = os.path.join(client_dir, "logs")
     os.makedirs(logs_dir, exist_ok=True)
-    
+
     with open(os.path.join(logs_dir, f"embeddings_{task_id}.stdout.log"), "w", encoding="utf-8") as f:
         f.write(stdout or "")
     with open(os.path.join(logs_dir, f"embeddings_{task_id}.stderr.log"), "w", encoding="utf-8") as f:
@@ -226,9 +231,14 @@ def pdf_embed_pipeline(self, client_id: str):
     """Pipeline to embed uploaded PDF using enhanced pipeline."""
     logger.info(f"Starting PDF embedding for client {client_id}")
 
-    # For PDFs, no crawling step; just run embeddings with source_type='pdf'
+    # Detect all existing sources so we don't wipe website data
+    client_dir = os.path.join(CLIENTS_DIR, client_id)
+    has_website = os.path.exists(os.path.join(client_dir, "website_content.json"))
+
+    source_type = "both" if has_website else "pdf"
+
     result = run_embeddings_task.apply_async(
-        args=({"client_id": client_id, "source_type": "pdf"},)
+        args=({"client_id": client_id, "source_type": source_type},)
     )
     return {"chain_task_id": result.id}
 
@@ -237,12 +247,12 @@ def pdf_embed_pipeline(self, client_id: str):
 def qa_embed_pipeline(self, client_id: str):
     """Pipeline to re-embed after Q&A updates."""
     logger.info(f"Starting Q&A re-embedding for client {client_id}")
-    
+
     # Check what sources exist
     client_dir = os.path.join(CLIENTS_DIR, client_id)
     has_website = os.path.exists(os.path.join(client_dir, "website_content.json"))
     has_pdf = os.path.exists(os.path.join(client_dir, "custom_pdf.txt"))
-    
+
     # Determine source type
     if has_website and has_pdf:
         source_type = "both"
@@ -250,7 +260,7 @@ def qa_embed_pipeline(self, client_id: str):
         source_type = "pdf"
     else:
         source_type = "crawl"
-    
+
     result = run_embeddings_task.apply_async(
         args=({"client_id": client_id, "source_type": source_type},)
     )

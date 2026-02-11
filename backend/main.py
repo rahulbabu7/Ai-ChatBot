@@ -19,7 +19,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
-    allow_methods=["POST", "GET", "DELETE"],
+    allow_methods=["POST", "GET", "PUT", "PATCH", "DELETE"],
     allow_headers=["Content-Type", "x-chatbot-key", "Authorization"],
 )
 
