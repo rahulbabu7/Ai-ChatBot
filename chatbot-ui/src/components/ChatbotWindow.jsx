@@ -475,6 +475,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           id: data.message_id, // Use the REAL database ID, not a temporary one
           sender: "bot",
           text: data.reply,
+          sources: data.sources || [],
           timestamp: new Date().toLocaleTimeString('en-IN', {
             hour: "2-digit",
             minute: "2-digit",
@@ -826,6 +827,60 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         msg.text
       )}
       </div>
+
+      {/* Source links rendered below the message bubble */}
+      {msg.sender === "bot" && msg.sources && msg.sources.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "6px" }}>
+          {msg.sources
+            .filter(s => (s.type === "webpage" && s.url) || s.type === "document")
+            .slice(0, 2)
+            .map((s, i) => (
+              s.type === "webpage" ? (
+                <a
+                  key={i}
+                  href={s.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontSize: "11px",
+                    color: "#6366f1",
+                    textDecoration: "none",
+                    border: "1px solid #e0e7ff",
+                    borderRadius: "12px",
+                    padding: "3px 10px",
+                    backgroundColor: "#f5f3ff",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  🔗 {s.title || "View Page"}
+                </a>
+              ) : (
+                <a
+                  key={i}
+                  href={`${s.download_path}?chatbot_key=${chatbotKey}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontSize: "11px",
+                    color: "#059669",
+                    textDecoration: "none",
+                    border: "1px solid #d1fae5",
+                    borderRadius: "12px",
+                    padding: "3px 10px",
+                    backgroundColor: "#ecfdf5",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  📄 {s.title || "Download PDF"}
+                </a>
+              )
+            ))}
+        </div>
+      )}
       <span
       style={{
         fontSize: "10px",

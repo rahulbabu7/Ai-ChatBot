@@ -232,8 +232,8 @@ class UniversalChunker:
 
     def __init__(
         self,
-        chunk_size: int = 600,  # Increased for tables
-        chunk_overlap: int = 100,
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200,
         min_chunk_size: int = 50
     ):
         self.chunk_size = chunk_size
@@ -267,17 +267,17 @@ class UniversalChunker:
 
         if is_table:
             # Tables: keep together if possible, don't split across rows
-            chunk_size = min(self.chunk_size * 2, 1200)  # Larger chunks for tables
-            overlap = 50
+            chunk_size = min(self.chunk_size * 2, 2000)  # Larger chunks for tables
+            overlap = 80
             separators = ["\n|", "\n\n", "\n"]  # Split at row boundaries
         else:
             doc_type = self._detect_document_type(text)
             if doc_type == 'structured':
-                chunk_size = self.chunk_size - 100
-                overlap = self.chunk_overlap - 20
+                chunk_size = self.chunk_size - 150
+                overlap = self.chunk_overlap - 40
             elif doc_type == 'narrative':
-                chunk_size = self.chunk_size + 100
-                overlap = self.chunk_overlap + 30
+                chunk_size = self.chunk_size + 200
+                overlap = self.chunk_overlap + 50
             else:
                 chunk_size = self.chunk_size
                 overlap = self.chunk_overlap
