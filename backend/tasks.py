@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import subprocess
 import asyncio
 from celery import chain
@@ -265,3 +266,50 @@ def qa_embed_pipeline(self, client_id: str):
         args=({"client_id": client_id, "source_type": source_type},)
     )
     return {"chain_task_id": result.id}
+
+
+@celery_app.task(bind=True)
+def weekly_recrawl_all_clients(self):
+    """Periodic task: re-crawl every client whose website was previously crawled.
+
+    Reads `website_content_stats.json` from each client directory to get the
+    original start_url and domain, then triggers crawl_and_embed_pipeline.
+    Safe to run even if some clients have no website data (skipped silently).
+    """
+    logger.info("🕐 Weekly recrawl: scanning all client directories...")
+    triggered = 0
+    skipped = 0
+
+    if not os.path.isdir(CLIENTS_DIR):
+        logger.warning("client_data directory not found — nothing to recrawl")
+        return {"triggered": 0, "skipped": 0}
+
+    for client_id in os.listdir(CLIENTS_DIR):
+        client_dir = os.path.join(CLIENTS_DIR, client_id)
+        stats_path = os.path.join(client_dir, "website_content_stats.json")
+
+        if not os.path.isfile(stats_path):
+            skipped += 1
+            continue
+
+        try:
+            with open(stats_path) as f:
+                stats = json.load(f)
+            start_url = stats.get("start_url")
+            domain = stats.get("domain")
+
+            if not start_url or not domain:
+                logger.warning(f"⚠️  {client_id}: missing start_url/domain in stats, skipping")
+                skipped += 1
+                continue
+
+            crawl_and_embed_pipeline.delay(client_id, domain, start_url)
+            logger.info(f"✅  Queued recrawl for {client_id} ({start_url})")
+            triggered += 1
+
+        except Exception as e:
+            logger.error(f"❌  Failed to queue recrawl for {client_id}: {e}")
+            skipped += 1
+
+    logger.info(f"Weekly recrawl complete: {triggered} queued, {skipped} skipped")
+    return {"triggered": triggered, "skipped": skipped}

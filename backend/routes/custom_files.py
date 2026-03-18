@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 import os
 import json
@@ -633,6 +634,21 @@ async def view_pdf_info(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching PDF info: {str(e)}")
+
+
+@router.get("/download-pdf/me")
+async def download_pdf(
+    client_id: str = Depends(get_client_from_header)
+):
+    """Download the uploaded PDF file for this client."""
+    pdf_path = os.path.join(CLIENTS_DIR, client_id, "custom_pdf.pdf")
+    if not os.path.exists(pdf_path):
+        raise HTTPException(status_code=404, detail="No PDF uploaded for this client.")
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        filename="document.pdf",
+    )
 
 
 @router.get("/view-chunks/me")

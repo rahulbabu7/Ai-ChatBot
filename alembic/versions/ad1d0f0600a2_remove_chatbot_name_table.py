@@ -18,8 +18,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Drop table directly - this will automatically drop foreign keys and indexes
-    op.drop_table('chatbot_name')
+    op.execute("DROP TABLE IF EXISTS chatbot_name")
 
 
 def downgrade() -> None:

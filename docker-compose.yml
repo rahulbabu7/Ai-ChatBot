@@ -1,6 +1,6 @@
 services:
   db:
-    image: mariadb:latest
+    image: docker.io/library/mariadb:latest
     container_name: mariadb
     ports:
       - "3306:3306"
@@ -24,7 +24,7 @@ services:
       retries: 5
 
   phpmyadmin:
-    image: phpmyadmin:latest
+    image: docker.io/library/phpmyadmin:latest
     container_name: phpmyadmin
     depends_on:
       - db
