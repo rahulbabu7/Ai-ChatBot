@@ -235,6 +235,11 @@ def pdf_embed_pipeline(self, client_id: str):
     # Detect all existing sources so we don't wipe website data
     client_dir = os.path.join(CLIENTS_DIR, client_id)
     has_website = os.path.exists(os.path.join(client_dir, "website_content.json"))
+    # Support both new multi-PDF (pdfs/manifest.json) and legacy (custom_pdf.txt)
+    has_pdf = (
+        os.path.exists(os.path.join(client_dir, "pdfs", "manifest.json")) or
+        os.path.exists(os.path.join(client_dir, "custom_pdf.txt"))
+    )
 
     source_type = "both" if has_website else "pdf"
 

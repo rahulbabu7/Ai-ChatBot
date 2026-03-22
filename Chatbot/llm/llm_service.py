@@ -533,16 +533,18 @@ CONTEXT:
 {table_instructions}
 
 GUIDELINES:
-1. Base your answers on the CONTEXT provided above. Use the context to give accurate, helpful responses.
+1. Base your answers ONLY on the CONTEXT provided above. Never use outside knowledge.
 2. If the context contains relevant information, synthesize a clear and helpful answer from it — even if the match is partial.
-3. If the context does NOT contain any relevant information for the question, respond: "I don't have specific information about that. Is there anything else I can help you with?"
-4. When the context contains tables, read column headers carefully to understand what each value represents.
-5. Be specific with details (numbers, dates, names) and always clarify what each value means.
-6. Use a {tone} tone.
-7. Keep answers concise (2-4 sentences) unless more detail is clearly needed.
-8. When two related columns appear in a table, explain the relationship between their values.
-9. Follow the conversation — if the user refers to "it", "that", or "this", resolve it from previous messages.
-10. Do NOT make up facts not supported by the context. If unsure, say so."""
+3. If the context does NOT mention the specific thing the user asked about, reply: "I don't have information about that." — even if you know about it from general knowledge. Do NOT make up or infer details.
+4. **Named entity rule**: If the user asks about a specific department, project, product, person, or any named item that does NOT appear in the CONTEXT, say: "I don't have information about [name]." Never describe it from your training data.
+5. When the context contains tables, read column headers carefully to understand what each value represents.
+6. Be specific with details (numbers, dates, names) and always clarify what each value means.
+7. Use a {tone} tone.
+8. Keep answers concise (2-4 sentences) unless more detail is clearly needed.
+9. When two related columns appear in a table, explain the relationship between their values.
+10. Follow the conversation — if the user refers to "it", "that", or "this", resolve it from previous messages.
+11. Do NOT use your training knowledge to fill gaps. If it is not in the CONTEXT, it does not exist for you.
+12. **Always reply in the same language the user writes in.** If the user writes in Malayalam, reply in Malayalam. If in Hindi, reply in Hindi. If in English, reply in English. Never switch languages unless the user does."""
 
     def _rewrite_query_with_history(self, query: str) -> str:
         """Expand vague queries using recent conversation history before retrieval.
@@ -767,11 +769,13 @@ GUIDELINES:
                     "is_structured": meta.get('is_structured', False)
                 })
             elif meta.get('source') == 'pdf':
+                pdf_id = meta.get('pdf_id', 'legacy')
                 source_info.update({
                     "type": "document",
                     "title": meta.get('filename', 'PDF'),
-                    # Frontend appends ?chatbot_key=... to construct the full URL
-                    "download_path": "/public/pdf",
+                    "pdf_id": pdf_id,
+                    # Frontend constructs: /public/pdf?chatbot_key=...&pdf_id=...
+                    "download_path": f"/public/pdf?pdf_id={pdf_id}",
                 })
             elif meta.get('source') == 'qa':
                 source_info.update({"type": "qa", "title": "Custom Q&A"})

@@ -13,9 +13,11 @@ const navigation = {
   icon: icons.dashboard,
   children: [
     { id: 'dashboard', title: 'Dashboard', type: 'item', icon: icons.dashboard, url: '/' },
-    { id: 'dashboard-client', title: 'Dashboard Client', type: 'item', icon: icons.layouts, url: '/dashboard' },
+    { id: 'onboarding', title: 'Get Started', type: 'item', icon: <i className="ph ph-rocket-launch" />, url: '/onboarding' },
+    { id: 'analytics', title: 'Analytics', type: 'item', icon: <i className="ph ph-chart-bar" />, url: '/analytics' },
+    { id: 'dashboard-client', title: 'Setup', type: 'item', icon: icons.layouts, url: '/dashboard' },
     { id: 'domain', title: 'Domain', type: 'item', icon: icons.layouts, url: '/domain' },
-    { id: 'leads', title: 'Leads Management', type: 'item', icon: icons.layouts, url: '/leads' },
+    { id: 'leads', title: 'Leads', type: 'item', icon: icons.layouts, url: '/leads' },
   ]
 };
 

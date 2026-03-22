@@ -3,9 +3,11 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 import os
 import json
+import uuid
 import aiofiles
 from PyPDF2 import PdfReader
 from pathlib import Path
+from datetime import datetime
 from backend.database import get_session
 from backend.auth_utils import get_client_from_header
 from backend.schemas import TaskResponse
@@ -53,6 +55,44 @@ def _purge_chroma_by_source(client_id: str, source: str) -> int:
         return len(ids_to_delete)
     except Exception as e:
         print(f"⚠️ Failed to purge ChromaDB chunks for source={source}: {e}")
+        return -1
+
+
+# ============================================================================
+# PDF MANIFEST HELPERS
+# ============================================================================
+
+def _pdf_dir(client_dir: str) -> str:
+    path = os.path.join(client_dir, "pdfs")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+def _load_pdf_manifest(client_dir: str) -> list:
+    manifest_path = os.path.join(client_dir, "pdfs", "manifest.json")
+    if not os.path.exists(manifest_path):
+        return []
+    with open(manifest_path) as f:
+        return json.load(f)
+
+def _save_pdf_manifest(client_dir: str, manifest: list) -> None:
+    manifest_path = os.path.join(client_dir, "pdfs", "manifest.json")
+    os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+def _purge_chroma_by_pdf_id(client_id: str, pdf_id: str) -> int:
+    """Delete ChromaDB chunks for a specific PDF by pdf_id metadata field."""
+    try:
+        import chromadb
+        chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
+        collection = chroma_client.get_collection(client_id.lower())
+        all_docs = collection.get(where={"pdf_id": pdf_id})
+        ids_to_delete = all_docs.get("ids", [])
+        if ids_to_delete:
+            collection.delete(ids=ids_to_delete)
+        return len(ids_to_delete)
+    except Exception as e:
+        print(f"⚠️ Failed to purge ChromaDB chunks for pdf_id={pdf_id}: {e}")
         return -1
 
 
@@ -176,48 +216,74 @@ async def upload_pdf(
     file: UploadFile = File(...),
     client_id: str = Depends(get_client_from_header)
 ):
-    """Upload and extract text from a PDF file"""
+    """Upload a PDF file. Multiple PDFs are supported — each gets a unique ID."""
     try:
         if not file.filename.lower().endswith('.pdf'):
             raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
         client_dir = os.path.join(CLIENTS_DIR, client_id)
         os.makedirs(client_dir, exist_ok=True)
+        pdf_dir = _pdf_dir(client_dir)
 
-        # Save the PDF file
-        pdf_path = os.path.join(client_dir, "custom_pdf.pdf")
+        # Generate unique ID for this PDF
+        pdf_id = str(uuid.uuid4())
+        original_name = file.filename
+
+        pdf_path = os.path.join(pdf_dir, f"{pdf_id}.pdf")
+        text_path = os.path.join(pdf_dir, f"{pdf_id}.txt")
+
+        # Save PDF
+        content = await file.read()
         async with aiofiles.open(pdf_path, "wb") as f:
-            content = await file.read()
             await f.write(content)
 
-        # Extract text from PDF using PyPDF2
+        # Extract text
         reader = PdfReader(pdf_path)
         text_content = ""
-
         for page in reader.pages:
             text_content += page.extract_text() + "\n\n"
 
-        # Save extracted text
-        text_path = os.path.join(client_dir, "custom_pdf.txt")
         async with aiofiles.open(text_path, "w", encoding="utf-8") as f:
             await f.write(text_content)
 
+        # Update manifest
+        manifest = _load_pdf_manifest(client_dir)
+        manifest.append({
+            "pdf_id": pdf_id,
+            "original_name": original_name,
+            "upload_date": datetime.utcnow().isoformat(),
+            "size_bytes": len(content),
+            "pages": len(reader.pages),
+        })
+        _save_pdf_manifest(client_dir, manifest)
+
         return {
             "status": "success",
-            "message": f"PDF uploaded and text extracted for {client_id}",
+            "pdf_id": pdf_id,
+            "original_name": original_name,
             "pages_extracted": len(reader.pages),
             "text_length": len(text_content),
-            "note": "Run /client/me/embed-pdf or /client/me/re-embed to create embeddings for chatbot use"
+            "note": "Run /client/me/embed-pdf to embed this PDF into the chatbot"
         }
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to extract text from PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload PDF: {str(e)}")
 
 
 # ============================================================================
 # EMBEDDING ENDPOINTS
 # ============================================================================
+
+@router.get("/list-pdfs/me")
+async def list_pdfs(
+    client_id: str = Depends(get_client_from_header)
+):
+    """List all uploaded PDFs for this client."""
+    client_dir = os.path.join(CLIENTS_DIR, client_id)
+    manifest = _load_pdf_manifest(client_dir)
+    return {"pdfs": manifest, "total": len(manifest)}
+
 
 @router.post("/me/embed-pdf", response_model=TaskResponse)
 async def embed_pdf(
@@ -638,16 +704,22 @@ async def view_pdf_info(
 
 @router.get("/download-pdf/me")
 async def download_pdf(
+    pdf_id: str,
     client_id: str = Depends(get_client_from_header)
 ):
-    """Download the uploaded PDF file for this client."""
-    pdf_path = os.path.join(CLIENTS_DIR, client_id, "custom_pdf.pdf")
+    """Download a specific PDF by pdf_id (admin authenticated)."""
+    client_dir = os.path.join(CLIENTS_DIR, client_id)
+    manifest = _load_pdf_manifest(client_dir)
+    entry = next((p for p in manifest if p["pdf_id"] == pdf_id), None)
+    if not entry:
+        raise HTTPException(status_code=404, detail=f"PDF '{pdf_id}' not found.")
+    pdf_path = os.path.join(client_dir, "pdfs", f"{pdf_id}.pdf")
     if not os.path.exists(pdf_path):
-        raise HTTPException(status_code=404, detail="No PDF uploaded for this client.")
+        raise HTTPException(status_code=404, detail="PDF file missing on disk.")
     return FileResponse(
         path=pdf_path,
         media_type="application/pdf",
-        filename="document.pdf",
+        filename=entry.get("original_name", "document.pdf"),
     )
 
 
@@ -758,33 +830,37 @@ async def delete_qa(
 
 @router.delete("/delete-pdf/me")
 async def delete_pdf(
+    pdf_id: str,
     client_id: str = Depends(get_client_from_header)
 ):
-    """Delete PDF files and automatically re-embed remaining sources"""
+    """Delete a specific PDF by pdf_id and re-embed remaining sources."""
     try:
         client_dir = os.path.join(CLIENTS_DIR, client_id)
-        pdf_path = os.path.join(client_dir, "custom_pdf.pdf")
-        text_path = os.path.join(client_dir, "custom_pdf.txt")
+        pdf_dir = _pdf_dir(client_dir)
+
+        manifest = _load_pdf_manifest(client_dir)
+        entry = next((p for p in manifest if p["pdf_id"] == pdf_id), None)
+        if not entry:
+            raise HTTPException(status_code=404, detail=f"PDF with id '{pdf_id}' not found")
 
         deleted_files = []
         errors = []
 
-        # Check if PDF exists before deletion
-        pdf_existed = os.path.exists(pdf_path) or os.path.exists(text_path)
-
-        for file_path, file_type in [(pdf_path, "PDF"), (text_path, "extracted text")]:
-            if os.path.exists(file_path):
+        for ext in (".pdf", ".txt"):
+            fpath = os.path.join(pdf_dir, f"{pdf_id}{ext}")
+            if os.path.exists(fpath):
                 try:
-                    os.remove(file_path)
-                    deleted_files.append(file_type)
+                    os.remove(fpath)
+                    deleted_files.append(ext)
                 except Exception as e:
-                    errors.append(f"Failed to delete {file_type}: {str(e)}")
+                    errors.append(str(e))
 
-        if not pdf_existed:
-            raise HTTPException(status_code=404, detail="No PDF files found")
+        # Remove from manifest
+        manifest = [p for p in manifest if p["pdf_id"] != pdf_id]
+        _save_pdf_manifest(client_dir, manifest)
 
-        # Immediately purge PDF chunks from ChromaDB so the chatbot stops using them
-        purged = _purge_chroma_by_source(client_id, "pdf")
+        # Purge ChromaDB chunks for this specific PDF
+        purged = _purge_chroma_by_pdf_id(client_id, pdf_id)
 
         # Invalidate cached chat sessions so they pick up the updated collection
         invalidate_client_sessions(client_id)
