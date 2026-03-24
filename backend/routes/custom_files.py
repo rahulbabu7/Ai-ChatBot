@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 import os
@@ -57,6 +57,26 @@ def _purge_chroma_by_source(client_id: str, source: str) -> int:
         print(f"⚠️ Failed to purge ChromaDB chunks for source={source}: {e}")
         return -1
 
+
+# ============================================================================
+# BACKGROUND TASK HELPERS
+# ============================================================================
+
+async def _bg_purge_by_pdf_id(client_id: str, pdf_id: str):
+    await asyncio.to_thread(_purge_chroma_by_pdf_id, client_id, pdf_id)
+
+async def _bg_purge_by_source(client_id: str, source: str):
+    await asyncio.to_thread(_purge_chroma_by_source, client_id, source)
+
+async def _bg_drop_collection(client_id: str):
+    def _drop():
+        import chromadb
+        chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
+        chroma_client.delete_collection(client_id.lower())
+    try:
+        await asyncio.to_thread(_drop)
+    except Exception as e:
+        print(f"⚠️ Failed to drop collection for {client_id}: {e}")
 
 # ============================================================================
 # PDF MANIFEST HELPERS
@@ -661,43 +681,43 @@ async def view_qa(
 async def view_pdf_info(
     client_id: str = Depends(get_client_from_header)
 ):
-    """View PDF upload information"""
+    """View all uploaded PDFs using the manifest system"""
     try:
         client_dir = os.path.join(CLIENTS_DIR, client_id)
-        pdf_path = os.path.join(client_dir, "custom_pdf.pdf")
-        text_path = os.path.join(client_dir, "custom_pdf.txt")
+        manifest = _load_pdf_manifest(client_dir)
 
-        result = {
-            "has_pdf": os.path.exists(pdf_path),
-            "has_extracted_text": os.path.exists(text_path),
-            "pdf_info": {}
-        }
+        if not manifest:
+            return {"has_pdf": False, "pdfs": [], "total": 0}
 
-        if result["has_pdf"]:
-            # Get PDF file info
-            pdf_stat = os.stat(pdf_path)
-            result["pdf_info"] = {
-                "filename": "custom_pdf.pdf",
-                "size_bytes": pdf_stat.st_size,
-                "size_mb": round(pdf_stat.st_size / (1024 * 1024), 2),
-                "uploaded_date": pdf_stat.st_mtime
+        pdf_dir = _pdf_dir(client_dir)
+        pdfs_detail = []
+
+        for entry in manifest:
+            pdf_id = entry["pdf_id"]
+            text_path = os.path.join(pdf_dir, f"{pdf_id}.txt")
+
+            detail = {
+                "pdf_id": pdf_id,
+                "original_name": entry.get("original_name", "unknown.pdf"),
+                "upload_date": entry.get("upload_date"),
+                "size_bytes": entry.get("size_bytes", 0),
+                "size_mb": round(entry.get("size_bytes", 0) / (1024 * 1024), 2),
+                "pages": entry.get("pages", 0),
+                "has_extracted_text": os.path.exists(text_path),
             }
 
-            # Get text extraction info if available
-            if result["has_extracted_text"]:
+            if os.path.exists(text_path):
                 try:
                     async with aiofiles.open(text_path, "r", encoding="utf-8") as f:
                         text_content = await f.read()
-
-                    result["pdf_info"]["text_length"] = len(text_content)
-                    result["pdf_info"]["word_count"] = len(text_content.split())
-                    result["pdf_info"]["preview"] = (
-                        text_content[:500] + "..." if len(text_content) > 500 else text_content
-                    )
+                    detail["word_count"] = len(text_content.split())
+                    detail["preview"] = text_content[:300] + "..." if len(text_content) > 300 else text_content
                 except Exception:
-                    result["pdf_info"]["text_extraction_error"] = "Could not read extracted text"
+                    pass
 
-        return result
+            pdfs_detail.append(detail)
+
+        return {"has_pdf": True, "pdfs": pdfs_detail, "total": len(pdfs_detail)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching PDF info: {str(e)}")
 
@@ -770,9 +790,10 @@ async def view_chunks(
 
 @router.delete("/delete-qa/me")
 async def delete_qa(
+    background_tasks: BackgroundTasks,
     client_id: str = Depends(get_client_from_header)
 ):
-    """Delete Q&A file and automatically re-embed remaining sources"""
+    """Delete Q&A file. ChromaDB purge runs in background after response."""
     try:
         client_dir = os.path.join(CLIENTS_DIR, client_id)
         qa_path = os.path.join(client_dir, "custom_qa.json")
@@ -781,45 +802,27 @@ async def delete_qa(
             raise HTTPException(status_code=404, detail="No Q&A file found")
 
         os.remove(qa_path)
-
-        # Immediately purge Q&A chunks from ChromaDB so the chatbot stops using them
-        purged = _purge_chroma_by_source(client_id, "qa")
-
-        # Invalidate cached chat sessions so they pick up the updated collection
         invalidate_client_sessions(client_id)
 
-        # Check if other sources exist AFTER deletion
         has_website = os.path.exists(os.path.join(client_dir, "website_content.json"))
-        has_pdf = os.path.exists(os.path.join(client_dir, "custom_pdf.txt"))
+        has_pdf = bool(_load_pdf_manifest(client_dir))
 
-        result = {
-            "success": True,
-            "message": "Q&A file deleted",
-            "chunks_purged": purged,
-        }
+        result = {"success": True, "message": "Q&A file deleted"}
 
-        # Automatically trigger re-embedding if other sources exist
         if has_website or has_pdf:
-            task = qa_embed_pipeline.delay(client_id)
-            result["re_embedding"] = {
-                "status": "queued",
-                "task_id": task.id,
-                "message": "Automatically re-embedding remaining sources to remove Q&A data from chatbot",
-                "remaining_sources": []
-            }
-            if has_website:
-                result["re_embedding"]["remaining_sources"].append("website")
-            if has_pdf:
-                result["re_embedding"]["remaining_sources"].append("PDF")
-        else:
-            # No sources left - clear the entire collection
             try:
-                import chromadb
-                chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
-                chroma_client.delete_collection(client_id.lower())
-                result["message"] = "Q&A deleted and vector database cleared (no other sources remain)"
-            except Exception as e:
-                result["message"] = f"Q&A deleted. Note: {str(e)}"
+                task = qa_embed_pipeline.delay(client_id)
+                result["re_embedding"] = {
+                    "status": "queued",
+                    "task_id": task.id,
+                    "message": "Re-embedding remaining sources",
+                    "remaining_sources": (["website"] if has_website else []) + (["PDF"] if has_pdf else [])
+                }
+            except Exception:
+                result["note"] = "Re-embedding skipped (worker unavailable)"
+            background_tasks.add_task(_bg_purge_by_source, client_id, "qa")
+        else:
+            background_tasks.add_task(_bg_drop_collection, client_id)
 
         return result
     except HTTPException:
@@ -831,9 +834,10 @@ async def delete_qa(
 @router.delete("/delete-pdf/me")
 async def delete_pdf(
     pdf_id: str,
+    background_tasks: BackgroundTasks,
     client_id: str = Depends(get_client_from_header)
 ):
-    """Delete a specific PDF by pdf_id and re-embed remaining sources."""
+    """Delete a specific PDF by pdf_id. ChromaDB purge runs in background after response."""
     try:
         client_dir = os.path.join(CLIENTS_DIR, client_id)
         pdf_dir = _pdf_dir(client_dir)
@@ -843,76 +847,59 @@ async def delete_pdf(
         if not entry:
             raise HTTPException(status_code=404, detail=f"PDF with id '{pdf_id}' not found")
 
-        deleted_files = []
-        errors = []
-
-        for ext in (".pdf", ".txt"):
-            fpath = os.path.join(pdf_dir, f"{pdf_id}{ext}")
-            if os.path.exists(fpath):
-                try:
-                    os.remove(fpath)
-                    deleted_files.append(ext)
-                except Exception as e:
-                    errors.append(str(e))
-
-        # Remove from manifest
+        # Remove from manifest first (fast, in-memory + small JSON write)
         manifest = [p for p in manifest if p["pdf_id"] != pdf_id]
         _save_pdf_manifest(client_dir, manifest)
 
-        # Purge ChromaDB chunks for this specific PDF
-        purged = _purge_chroma_by_pdf_id(client_id, pdf_id)
+        # Delete physical files in background — large PDFs can be slow to delete
+        async def _delete_files():
+            for ext in (".pdf", ".txt"):
+                fpath = os.path.join(pdf_dir, f"{pdf_id}{ext}")
+                if os.path.exists(fpath):
+                    try:
+                        await asyncio.to_thread(os.remove, fpath)
+                    except Exception:
+                        pass
 
-        # Invalidate cached chat sessions so they pick up the updated collection
+        # Invalidate cached chat sessions immediately
         invalidate_client_sessions(client_id)
 
-        # Check if other sources exist AFTER deletion
+        # Check if other sources exist
         has_website = os.path.exists(os.path.join(client_dir, "website_content.json"))
         has_qa = os.path.exists(os.path.join(client_dir, "custom_qa.json"))
 
-        result = {
-            "success": True,
-            "deleted_files": deleted_files,
-            "chunks_purged": purged,
-        }
+        result = {"success": True}
 
-        if errors:
-            result["errors"] = errors
-
-        # Automatically trigger re-embedding if other sources exist
+        # File deletion + ChromaDB purge both run in background after response
+        background_tasks.add_task(_delete_files)
         if has_website or has_qa:
-            task = qa_embed_pipeline.delay(client_id)
-            result["re_embedding"] = {
-                "status": "queued",
-                "task_id": task.id,
-                "message": "Automatically re-embedding remaining sources to remove PDF data from chatbot",
-                "remaining_sources": []
-            }
-            if has_website:
-                result["re_embedding"]["remaining_sources"].append("website")
-            if has_qa:
-                result["re_embedding"]["remaining_sources"].append("Q&A")
-        else:
-            # No sources left - clear the entire collection
             try:
-                import chromadb
-                chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
-                chroma_client.delete_collection(client_id.lower())
-                result["message"] = "PDF deleted and vector database cleared (no other sources remain)"
-            except Exception as e:
-                result["message"] = f"PDF deleted. Note: {str(e)}"
+                task = qa_embed_pipeline.delay(client_id)
+                result["re_embedding"] = {
+                    "status": "queued",
+                    "task_id": task.id,
+                    "message": "Re-embedding remaining sources",
+                    "remaining_sources": (["website"] if has_website else []) + (["Q&A"] if has_qa else [])
+                }
+            except Exception:
+                result["note"] = "Re-embedding skipped (worker unavailable)"
+            background_tasks.add_task(_bg_purge_by_pdf_id, client_id, pdf_id)
+        else:
+            background_tasks.add_task(_bg_drop_collection, client_id)
 
         return result
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting PDF files: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting PDF: {str(e)}")
 
 
 @router.delete("/delete-website/me")
 async def delete_website(
+    background_tasks: BackgroundTasks,
     client_id: str = Depends(get_client_from_header)
 ):
-    """Delete website crawl data and automatically re-embed remaining sources"""
+    """Delete website crawl data. ChromaDB purge runs in background after response."""
     try:
         client_dir = os.path.join(CLIENTS_DIR, client_id)
         website_path = os.path.join(client_dir, "website_content.json")
@@ -921,43 +908,27 @@ async def delete_website(
             raise HTTPException(status_code=404, detail="No website data found")
 
         os.remove(website_path)
-
-        # Immediately purge website chunks from ChromaDB so the chatbot stops using them
-        purged = _purge_chroma_by_source(client_id, "website")
-
-        # Invalidate cached chat sessions so they pick up the updated collection
         invalidate_client_sessions(client_id)
 
-        # Check if other sources exist AFTER deletion
-        has_pdf = os.path.exists(os.path.join(client_dir, "custom_pdf.txt"))
+        has_pdf = bool(_load_pdf_manifest(client_dir))
         has_qa = os.path.exists(os.path.join(client_dir, "custom_qa.json"))
 
-        result = {
-            "success": True,
-            "message": "Website data deleted",
-            "chunks_purged": purged,
-        }
+        result = {"success": True, "message": "Website data deleted"}
 
         if has_pdf or has_qa:
-            task = qa_embed_pipeline.delay(client_id)
-            result["re_embedding"] = {
-                "status": "queued",
-                "task_id": task.id,
-                "message": "Automatically re-embedding remaining sources to remove website data from chatbot",
-                "remaining_sources": []
-            }
-            if has_pdf:
-                result["re_embedding"]["remaining_sources"].append("PDF")
-            if has_qa:
-                result["re_embedding"]["remaining_sources"].append("Q&A")
-        else:
             try:
-                import chromadb
-                chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
-                chroma_client.delete_collection(client_id.lower())
-                result["message"] = "Website data deleted and vector database cleared (no other sources remain)"
-            except Exception as e:
-                result["message"] = f"Website data deleted. Note: {str(e)}"
+                task = qa_embed_pipeline.delay(client_id)
+                result["re_embedding"] = {
+                    "status": "queued",
+                    "task_id": task.id,
+                    "message": "Re-embedding remaining sources",
+                    "remaining_sources": (["PDF"] if has_pdf else []) + (["Q&A"] if has_qa else [])
+                }
+            except Exception:
+                result["note"] = "Re-embedding skipped (worker unavailable)"
+            background_tasks.add_task(_bg_purge_by_source, client_id, "website")
+        else:
+            background_tasks.add_task(_bg_drop_collection, client_id)
 
         return result
     except HTTPException:
@@ -968,9 +939,10 @@ async def delete_website(
 
 @router.delete("/clear-all/me")
 async def clear_all_data(
+    background_tasks: BackgroundTasks,
     client_id: str = Depends(get_client_from_header)
 ):
-    """Delete all client data (website, PDF, Q&A, embeddings)"""
+    """Delete all client data. ChromaDB drop runs in background after response."""
     try:
         client_dir = os.path.join(CLIENTS_DIR, client_id)
 
@@ -980,7 +952,6 @@ async def clear_all_data(
         deleted_items = []
         errors = []
 
-        # Files to delete
         files_to_delete = [
             ("website_content.json", "website crawl data"),
             ("custom_pdf.pdf", "PDF file"),
@@ -999,27 +970,29 @@ async def clear_all_data(
                 except Exception as e:
                     errors.append(f"Failed to delete {description}: {str(e)}")
 
-        # Delete ChromaDB collection
-        try:
-            import chromadb
-            chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
-            chroma_client.delete_collection(client_id.lower())
-            deleted_items.append("vector database")
-        except Exception as e:
-            errors.append(f"Failed to delete vector database: {str(e)}")
+        # Also clear the multi-PDF manifest and files
+        pdf_dir = os.path.join(client_dir, "pdfs")
+        if os.path.exists(pdf_dir):
+            import shutil
+            try:
+                shutil.rmtree(pdf_dir)
+                deleted_items.append("PDF files")
+            except Exception as e:
+                errors.append(f"Failed to delete PDF directory: {str(e)}")
 
-        # Invalidate cached chat sessions
         invalidate_client_sessions(client_id)
+
+        # Drop ChromaDB collection in background
+        background_tasks.add_task(_bg_drop_collection, client_id)
 
         result = {
             "success": True,
             "deleted_items": deleted_items,
-            "message": f"Deleted {len(deleted_items)} data sources for {client_id}"
+            "message": f"Deleted {len(deleted_items)} data sources. Vector database clearing in background."
         }
 
         if errors:
             result["errors"] = errors
-            result["message"] += f" (with {len(errors)} errors)"
 
         return result
     except HTTPException:

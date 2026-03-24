@@ -41,10 +41,11 @@ export default function AuthLogin({ className }) {
         // Store JWT token
         const storage = remember ? localStorage : sessionStorage;
         storage.setItem('jwt_token', data.token);
+        localStorage.setItem('user_role', data.role || 'client');
 
         setLog('✅ Login successful! Redirecting...');
         setTimeout(() => {
-          navigate(`/`, { replace: true });
+          navigate(data.role === 'superadmin' ? '/superadmin' : '/', { replace: true });
         }, 500);
       } else {
         setLog(`❌ ${data.message || 'Login failed'}`);

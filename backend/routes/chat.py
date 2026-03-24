@@ -60,6 +60,9 @@ async def client_chat(
     if not client:
         raise HTTPException(status_code=403, detail="Invalid client or key")
 
+    if not client.chatbot_enabled:
+        return {"reply": "This chatbot is currently unavailable.", "sources": [], "session_id": req.session_id or ""}
+
     # Use provided session_id or create new one
     chatbot_session_id = req.session_id or str(uuid.uuid4())
 

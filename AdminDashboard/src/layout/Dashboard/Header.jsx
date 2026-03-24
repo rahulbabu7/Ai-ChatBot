@@ -11,12 +11,14 @@ import Alert from 'react-bootstrap/Alert';
 import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
 import Img2 from 'assets/images/user/avatar-2.png';
 import { API_URL } from '../../config';
+import { useDarkMode } from '../../hooks/useDarkMode';
 
 export default function Header() {
   const navigate = useNavigate();
   const { menuMaster } = useGetMenuMaster();
   const drawerOpen = menuMaster?.isDashboardDrawerOpened;
 
+  const [isDark, toggleDark] = useDarkMode();
   const [user, setUser] = useState({ name: '', email: '' });
   const [showShareModal, setShowShareModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -221,6 +223,18 @@ export default function Header() {
           </Nav>
 
           <Nav className="list-unstyled d-flex align-items-center ms-auto">
+            {/* Dark mode toggle */}
+            <Nav.Item className="pc-h-item">
+              <Nav.Link
+                as="button"
+                className="pc-head-link border-0 bg-transparent"
+                onClick={toggleDark}
+                title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+              >
+                <i className={`ph ${isDark ? 'ph-sun' : 'ph-moon'}`} style={{ fontSize: '1.25rem' }} />
+              </Nav.Link>
+            </Nav.Item>
+
             {/* User Profile Dropdown */}
             <Dropdown align="end">
               <Dropdown.Toggle className="pc-head-link p-0 border-0 bg-transparent" variant="link" id="user-dropdown">

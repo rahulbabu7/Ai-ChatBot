@@ -412,10 +412,10 @@ const FirstResponseTime = () => {
               </div>
               
               {/* Chart - Same as before */}
-              <div className="chart-container" style={{ 
-                height: '350px', 
+              <div className="chart-container" style={{
+                height: '350px',
                 background: 'linear-gradient(180deg, rgba(4, 169, 245, 0.05) 0%, rgba(4, 169, 245, 0.02) 100%)',
-                border: '1px solid #e4e7ea',
+                border: '1px solid var(--bs-border-color)',
                 borderRadius: '8px',
                 padding: '20px',
                 position: 'relative'
@@ -429,7 +429,7 @@ const FirstResponseTime = () => {
                       
                       return (
                         <div key={index} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, maxWidth: daysInRange > 7 ? '60px' : '100px' }}>
-                          <div style={{ fontSize: '11px', color: '#76838f', marginBottom: '10px', fontWeight: '500' }}>
+                          <div className="text-muted" style={{ fontSize: '11px', marginBottom: '10px', fontWeight: '500' }}>
                             {new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '200px', marginBottom: '10px' }}>

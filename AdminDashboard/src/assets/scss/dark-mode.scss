@@ -1,0 +1,344 @@
+// ── Admin chat shortcuts dropdown (light mode base) ─────────────────────────
+.shortcuts-dropdown {
+  background-color: white;
+  border: 1px solid #ddd;
+
+  .shortcut-item {
+    border-bottom: 1px solid #f0f0f0;
+
+    &:hover {
+      background-color: #f8f9fa;
+    }
+  }
+}
+
+[data-bs-theme='dark'] {
+  // ── Bootstrap body override ────────────────────────────────────────────────
+  --bs-body-bg: #0f1117;
+  --bs-body-color: #dee2e6;
+  --bs-secondary-color: #adb5bd;
+  --bs-border-color: rgba(255, 255, 255, 0.1);
+  --bs-card-bg: #1a202c;
+  --bs-card-border-color: rgba(255, 255, 255, 0.08);
+
+  // ── Template custom variables ──────────────────────────────────────────────
+  --pc-heading-color: #e2e8f0;
+  --pc-active-background: rgba(255, 255, 255, 0.08);
+
+  // Sidebar
+  --pc-sidebar-background: #1a202c;
+  --pc-sidebar-color: #8892a4;
+  --pc-sidebar-color-rgb: 136, 146, 164;
+  --pc-sidebar-active-color: #63b3ed;
+  --pc-sidebar-active-background: rgba(255, 255, 255, 0.08);
+  --pc-sidebar-main-active-color: #fff;
+  --pc-sidebar-shadow: 1px 0 20px 0 rgba(0, 0, 0, 0.4);
+  --pc-sidebar-caption-color: #cbd5e0;
+  --pc-sidebar-border: 1px solid rgba(255, 255, 255, 0.06);
+
+  // Header
+  --pc-header-background: rgba(15, 17, 23, 0.85);
+  --pc-header-color: #a0aec0;
+  --pc-header-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  // Card
+  --pc-card-box-shadow: 0 1px 20px 0 rgba(0, 0, 0, 0.4);
+
+  // ── Body & content area ────────────────────────────────────────────────────
+  body {
+    background-color: #0f1117;
+    color: #dee2e6;
+  }
+
+  .pc-container,
+  .pc-content {
+    background-color: #0f1117;
+    color: #dee2e6;
+  }
+
+  // ── Typography ─────────────────────────────────────────────────────────────
+  h1, h2, h3, h4, h5, h6,
+  .h1, .h2, .h3, .h4, .h5, .h6 {
+    color: #e2e8f0;
+  }
+
+  p, span, label, small {
+    color: inherit;
+  }
+
+  .text-muted {
+    color: #8a9ab0 !important;
+  }
+
+  .text-dark {
+    color: #dee2e6 !important;
+  }
+
+  // ── Cards ──────────────────────────────────────────────────────────────────
+  .card {
+    background-color: #1a202c;
+    border-color: rgba(255, 255, 255, 0.08);
+    color: #dee2e6;
+  }
+
+  .card-header {
+    background-color: transparent;
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+  }
+
+  // ── Tables ─────────────────────────────────────────────────────────────────
+  .table {
+    color: #dee2e6;
+    --bs-table-bg: transparent;
+    --bs-table-striped-bg: rgba(255, 255, 255, 0.03);
+    --bs-table-hover-bg: rgba(255, 255, 255, 0.05);
+    --bs-table-border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .table-light {
+    --bs-table-bg: rgba(255, 255, 255, 0.05);
+    color: #dee2e6;
+  }
+
+  // ── Forms ──────────────────────────────────────────────────────────────────
+  .form-control,
+  .form-select {
+    background-color: #2d3748;
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #dee2e6;
+
+    &::placeholder {
+      color: #718096;
+    }
+
+    &:focus {
+      background-color: #2d3748;
+      color: #dee2e6;
+      border-color: #63b3ed;
+    }
+  }
+
+  // ── Modals ─────────────────────────────────────────────────────────────────
+  .modal-content {
+    background-color: #1a202c;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #dee2e6;
+  }
+
+  .modal-header,
+  .modal-footer {
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  // ── Dropdowns ─────────────────────────────────────────────────────────────
+  .dropdown-menu {
+    background-color: #1e2533;
+    border-color: rgba(255, 255, 255, 0.1);
+
+    .dropdown-item {
+      color: #dee2e6;
+
+      &:hover,
+      &:focus {
+        background-color: rgba(255, 255, 255, 0.08);
+        color: #fff;
+      }
+    }
+
+    .dropdown-divider {
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .dropdown-header {
+      color: #8a9ab0;
+    }
+  }
+
+  // ── List groups ────────────────────────────────────────────────────────────
+  .list-group-item {
+    background-color: #1a202c;
+    border-color: rgba(255, 255, 255, 0.08);
+    color: #dee2e6;
+
+    &.active {
+      background-color: #2b6cb0;
+      border-color: #2b6cb0;
+    }
+
+    &:hover,
+    &.action:hover {
+      background-color: rgba(255, 255, 255, 0.06);
+    }
+  }
+
+  // ── Alerts ─────────────────────────────────────────────────────────────────
+  .alert-success { background-color: rgba(72, 187, 120, 0.15); color: #9ae6b4; border-color: rgba(72, 187, 120, 0.3); }
+  .alert-danger  { background-color: rgba(245, 101, 101, 0.15); color: #feb2b2; border-color: rgba(245, 101, 101, 0.3); }
+  .alert-warning { background-color: rgba(246, 173, 85, 0.15); color: #fbd38d; border-color: rgba(246, 173, 85, 0.3); }
+  .alert-info    { background-color: rgba(99, 179, 237, 0.15); color: #bee3f8; border-color: rgba(99, 179, 237, 0.3); }
+
+  // ── Misc ───────────────────────────────────────────────────────────────────
+  .bg-light {
+    background-color: rgba(255, 255, 255, 0.06) !important;
+    color: #dee2e6 !important;
+  }
+
+  .border {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  .border-bottom,
+  .border-top {
+    border-color: rgba(255, 255, 255, 0.08) !important;
+  }
+
+  pre {
+    background-color: #2d3748 !important;
+    color: #e2e8f0 !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  .pc-header {
+    backdrop-filter: blur(10px);
+  }
+
+  code {
+    background-color: #2d3748;
+    color: #90cdf4;
+  }
+
+  hr {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  // ── Chat session area ──────────────────────────────────────────────────────
+  .chat-messages-container {
+    background-color: #141920 !important;
+  }
+
+  .chat-bubble-bot {
+    background-color: #1e2533 !important;
+    color: #dee2e6 !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  // ── bg-white override ──────────────────────────────────────────────────────
+  .bg-white {
+    background-color: #1e2533 !important;
+    color: #dee2e6 !important;
+  }
+
+  // ── Progress bars ──────────────────────────────────────────────────────────
+  .progress {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+
+  // ── Input group ────────────────────────────────────────────────────────────
+  .input-group-text {
+    background-color: #2d3748;
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #dee2e6;
+  }
+
+  // ── Badges ─────────────────────────────────────────────────────────────────
+  .badge.bg-light {
+    background-color: rgba(255, 255, 255, 0.12) !important;
+    color: #dee2e6 !important;
+  }
+
+  // ── MUI (Material-UI) components ────────────────────────────────────────────
+  .MuiPaper-root {
+    background-color: #1a202c !important;
+    color: #dee2e6 !important;
+  }
+
+  .MuiCardHeader-title {
+    color: #e2e8f0 !important;
+  }
+
+  .MuiCardHeader-subheader {
+    color: #8a9ab0 !important;
+  }
+
+  .MuiTableCell-root {
+    color: #dee2e6 !important;
+    border-bottom-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  .MuiTableCell-head {
+    color: #a0aec0 !important;
+    background-color: rgba(255, 255, 255, 0.03) !important;
+  }
+
+  .MuiFormLabel-root,
+  .MuiInputLabel-root {
+    color: #8a9ab0 !important;
+  }
+
+  .MuiOutlinedInput-root {
+    color: #dee2e6 !important;
+
+    .MuiOutlinedInput-notchedOutline {
+      border-color: rgba(255, 255, 255, 0.15) !important;
+    }
+
+    &:hover .MuiOutlinedInput-notchedOutline {
+      border-color: rgba(255, 255, 255, 0.3) !important;
+    }
+  }
+
+  .MuiSelect-icon {
+    color: #8a9ab0 !important;
+  }
+
+  .MuiMenu-paper,
+  .MuiPopover-paper {
+    background-color: #1e2533 !important;
+
+    .MuiMenuItem-root {
+      color: #dee2e6 !important;
+
+      &:hover {
+        background-color: rgba(255, 255, 255, 0.08) !important;
+      }
+    }
+  }
+
+  .MuiAlert-standardError { background-color: rgba(245, 101, 101, 0.15) !important; color: #feb2b2 !important; }
+  .MuiAlert-standardInfo  { background-color: rgba(99, 179, 237, 0.15) !important; color: #bee3f8 !important; }
+
+  .MuiChip-outlined {
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    color: #dee2e6 !important;
+  }
+
+  .MuiTypography-colorTextSecondary,
+  .MuiTypography-root.MuiTypography-body2 {
+    color: #8a9ab0;
+  }
+
+  // ── Admin chat shortcuts dropdown ───────────────────────────────────────────
+  .shortcuts-dropdown {
+    background-color: #1e2533 !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+
+    .shortcuts-header {
+      background-color: rgba(255, 255, 255, 0.04) !important;
+      border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+    }
+
+    .shortcut-item {
+      border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+      color: #dee2e6;
+
+      &:hover {
+        background-color: rgba(255, 255, 255, 0.08) !important;
+      }
+    }
+  }
+
+  // ── Admin chat messages area ────────────────────────────────────────────────
+  .admin-chat-messages {
+    background-color: #141920 !important;
+  }
+}

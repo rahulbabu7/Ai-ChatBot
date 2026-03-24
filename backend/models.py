@@ -50,6 +50,9 @@ class User(SQLModel, table=True):
     role: str = Field(default="client", sa_column=Column(String(20), nullable=False))
     client_id: str = Field(sa_column=Column(String(100), unique=True, nullable=False, index=True))
     chatbot_key: Optional[str] = Field(default=None, sa_column=Column(String(100), unique=True))
+    chatbot_enabled: bool = Field(default=True, sa_column=Column(Integer, nullable=False, server_default="1"))
+    plan: str = Field(default="trial", sa_column=Column(String(20), nullable=False, server_default="trial"))
+    plan_expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
 
 
 class ChatbotName(SQLModel, table=True):

@@ -21,6 +21,7 @@ const ShortcutsPage = Loadable(lazy(() => import('views/settings/Shortcuts')));
 const ProfileSettingsPage = Loadable(lazy(() => import('views/settings/ProfileSettings')));
 const AnalyticsPage = Loadable(lazy(() => import('views/navigation/dashboard/Analytics')));
 const OnboardingPage = Loadable(lazy(() => import('views/navigation/dashboard/Onboarding')));
+const SuperAdminPage = Loadable(lazy(() => import('views/navigation/dashboard/SuperAdminDashboard')));
 
 const PagesRoutes = {
   path: '/',
@@ -55,6 +56,7 @@ const PagesRoutes = {
         // Analytics & Onboarding
         { path: 'analytics', element: <AnalyticsPage /> },
         { path: 'onboarding', element: <OnboardingPage /> },
+        { path: 'superadmin', element: <SuperAdminPage /> },
       ]
     }
   ]

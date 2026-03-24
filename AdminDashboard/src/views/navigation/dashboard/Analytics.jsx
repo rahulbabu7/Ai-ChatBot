@@ -69,7 +69,7 @@ export default function Analytics() {
           {/* Top Questions */}
           <Col md={7}>
             <Card className="shadow-sm h-100">
-              <Card.Header className="bg-white border-bottom">
+              <Card.Header className="border-bottom">
                 <h5 className="mb-0">
                   Top Questions Asked
                   <Badge bg="secondary" className="ms-2">{topQuestions.length}</Badge>
@@ -110,7 +110,7 @@ export default function Analytics() {
           {/* Unanswered Questions */}
           <Col md={5}>
             <Card className="shadow-sm h-100">
-              <Card.Header className="bg-white border-bottom">
+              <Card.Header className="border-bottom">
                 <h5 className="mb-0">
                   Unanswered Questions
                   {totalUnanswered > 0 && (

@@ -8,7 +8,7 @@ from celery.utils.log import get_task_logger
 
 from backend.celery_app import celery_app
 from backend.database import async_session_maker
-from backend.models import add_task, update_task
+from backend.models import add_task, update_task, User
 
 # Add Chatbot/LLM path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -318,3 +318,34 @@ def weekly_recrawl_all_clients(self):
 
     logger.info(f"Weekly recrawl complete: {triggered} queued, {skipped} skipped")
     return {"triggered": triggered, "skipped": skipped}
+
+
+@celery_app.task(name="backend.tasks.disable_expired_clients", bind=True)
+def disable_expired_clients(self):
+    """Daily task: disable chatbots for clients whose plan has expired."""
+    from datetime import datetime
+    from sqlmodel import select
+
+    async def _run():
+        async with async_session_maker() as session:
+            now = datetime.utcnow()
+            stmt = select(User).where(
+                User.plan_expires_at != None,
+                User.plan_expires_at < now,
+                User.chatbot_enabled == True,
+            )
+            result = await session.execute(stmt)
+            expired = result.scalars().all()
+
+            disabled = 0
+            for user in expired:
+                user.chatbot_enabled = False
+                session.add(user)
+                disabled += 1
+
+            await session.commit()
+            return disabled
+
+    count = run_async(_run())
+    logger.info(f"Auto-disabled {count} expired client(s)")
+    return {"disabled": count}

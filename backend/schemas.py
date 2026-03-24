@@ -103,3 +103,8 @@ class LeadDataRequest(BaseModel):
 class UpdateLeadStatusRequest(BaseModel):
     status: str
     notes: Optional[str] = None
+
+
+class PlanUpdateRequest(BaseModel):
+    plan: str                           # trial | paid | cancelled
+    expires_days: Optional[int] = None  # days from now; None = no expiry
