@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from .routes import auth,chat,domain,daily_stats,crawl_embed_pipeline,custom_files,admin_reply,shortcuts,websockets,userProfile,public_chatbot,leads
+from .routes import auth,chat,domain,daily_stats,crawl_embed_pipeline,custom_files,admin_reply,shortcuts,websockets,userProfile,public_chatbot,leads,onboarding,superadmin
 from .config import settings
 
 # === FastAPI App ===
@@ -36,3 +36,5 @@ app.include_router(websockets.router)
 app.include_router(userProfile.router)
 app.include_router(public_chatbot.router)
 app.include_router(leads.router)
+app.include_router(onboarding.router)
+app.include_router(superadmin.router)

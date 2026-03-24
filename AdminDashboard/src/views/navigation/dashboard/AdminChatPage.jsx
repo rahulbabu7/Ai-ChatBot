@@ -443,7 +443,7 @@ export default function AdminChatPage() {
 
       {/* Header */}
       <Card className="mb-3 border-0 shadow-sm">
-        <Card.Header className="bg-white">
+        <Card.Header>
           <div className="d-flex justify-content-between align-items-center">
             <div className="d-flex align-items-center gap-3">
               <Button variant="outline-secondary" size="sm" onClick={() => navigate(-1)}>
@@ -498,9 +498,8 @@ export default function AdminChatPage() {
       <Card className="mb-3 shadow-sm">
         <Card.Body
           ref={chatContainerRef}
-          className="overflow-auto p-4"
+          className="overflow-auto p-4 admin-chat-messages"
           style={{
-            backgroundColor: '#f8f9fa',
             height: '55vh',
             minHeight: '400px'
           }}
@@ -520,7 +519,7 @@ export default function AdminChatPage() {
                         ? 'bg-primary text-white'
                         : chat.admin_override
                           ? 'bg-success text-white border border-success border-3'
-                          : 'bg-white border'
+                          : 'chat-bubble-bot border'
                     }`}
                     style={{ maxWidth: '70%' }}
                   >
@@ -568,7 +567,7 @@ export default function AdminChatPage() {
               {/* User typing indicator */}
               {isUserTyping && (
                 <div className="d-flex justify-content-end">
-                  <div className="p-3 rounded bg-light" style={{ maxWidth: '70%' }}>
+                  <div className="p-3 rounded chat-bubble-bot" style={{ maxWidth: '70%' }}>
                     <small className="text-muted">
                       <span className="spinner-grow spinner-grow-sm me-2" style={{ width: '0.5rem', height: '0.5rem' }}></span>
                       User is typing...
@@ -609,13 +608,12 @@ export default function AdminChatPage() {
               {/* Shortcuts Dropdown */}
               {showShortcutsDropdown && (
                 <div
+                  className="shortcuts-dropdown"
                   style={{
                     position: 'absolute',
                     bottom: '100%',
                     left: 0,
                     right: 0,
-                    backgroundColor: 'white',
-                    border: '1px solid #ddd',
                     borderRadius: '8px',
                     maxHeight: '200px',
                     overflowY: 'auto',
@@ -624,21 +622,19 @@ export default function AdminChatPage() {
                     marginBottom: '8px'
                   }}
                 >
-                  <div className="p-2 bg-light border-bottom">
+                  <div className="shortcuts-header p-2 bg-light border-bottom">
                     <small className="text-muted fw-bold">⚡ Available Shortcuts ({filteredShortcuts.length})</small>
                   </div>
                   {filteredShortcuts.map((shortcut) => (
                     <div
                       key={shortcut.id}
+                      className="shortcut-item"
                       onClick={() => handleUseShortcut(shortcut)}
                       style={{
                         padding: '12px',
                         cursor: 'pointer',
-                        borderBottom: '1px solid #f0f0f0',
                         transition: 'background 0.2s'
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f8f9fa')}
-                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'white')}
                     >
                       <div className="d-flex justify-content-between align-items-start">
                         <div style={{ flex: 1 }}>

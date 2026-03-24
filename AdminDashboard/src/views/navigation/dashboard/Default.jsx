@@ -449,7 +449,8 @@ export default function DefaultPage() {
             <Card.Body
               ref={chatContainerRef}
               className="chat-messages p-3"
-              style={{ maxHeight: '70vh', overflowY: 'auto', backgroundColor: '#f8f9fa' }}
+              style={{ maxHeight: '70vh', overflowY: 'auto' }}
+            className="chat-messages-container"
             >
               {loading ? (
                 <div className="d-flex justify-content-center align-items-center h-100">
@@ -465,7 +466,7 @@ export default function DefaultPage() {
                   <div
                     key={i}
                     className={`chat-message mb-3 p-3 rounded ${
-                      chat.role === 'user' ? 'bg-primary text-white ms-auto' : 'bg-white border me-auto'
+                      chat.role === 'user' ? 'bg-primary text-white ms-auto' : 'chat-bubble-bot border me-auto'
                     }`}
                     style={{ maxWidth: '75%' }}
                   >

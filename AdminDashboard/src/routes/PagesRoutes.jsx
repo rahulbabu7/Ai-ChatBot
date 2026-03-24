@@ -19,6 +19,9 @@ const LeadsManagement = Loadable(lazy(() => import('views/navigation/dashboard/L
 // Settings Pages - Add these imports
 const ShortcutsPage = Loadable(lazy(() => import('views/settings/Shortcuts')));
 const ProfileSettingsPage = Loadable(lazy(() => import('views/settings/ProfileSettings')));
+const AnalyticsPage = Loadable(lazy(() => import('views/navigation/dashboard/Analytics')));
+const OnboardingPage = Loadable(lazy(() => import('views/navigation/dashboard/Onboarding')));
+const SuperAdminPage = Loadable(lazy(() => import('views/navigation/dashboard/SuperAdminDashboard')));
 
 const PagesRoutes = {
   path: '/',
@@ -47,9 +50,13 @@ const PagesRoutes = {
         { path: 'user-satisfaction', element: <UserSatisfaction /> },
         { path: 'leads', element: <LeadsManagement /> },
 
-        // Settings Routes - Add these
+        // Settings Routes
         { path: 'settings/shortcuts', element: <ShortcutsPage /> },
         { path: 'settings/profile', element: <ProfileSettingsPage /> },
+        // Analytics & Onboarding
+        { path: 'analytics', element: <AnalyticsPage /> },
+        { path: 'onboarding', element: <OnboardingPage /> },
+        { path: 'superadmin', element: <SuperAdminPage /> },
       ]
     }
   ]
