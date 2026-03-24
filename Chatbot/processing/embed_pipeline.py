@@ -232,8 +232,8 @@ class UniversalChunker:
 
     def __init__(
         self,
-        chunk_size: int = 600,  # Increased for tables
-        chunk_overlap: int = 100,
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200,
         min_chunk_size: int = 50
     ):
         self.chunk_size = chunk_size
@@ -267,17 +267,17 @@ class UniversalChunker:
 
         if is_table:
             # Tables: keep together if possible, don't split across rows
-            chunk_size = min(self.chunk_size * 2, 1200)  # Larger chunks for tables
-            overlap = 50
+            chunk_size = min(self.chunk_size * 2, 2000)  # Larger chunks for tables
+            overlap = 80
             separators = ["\n|", "\n\n", "\n"]  # Split at row boundaries
         else:
             doc_type = self._detect_document_type(text)
             if doc_type == 'structured':
-                chunk_size = self.chunk_size - 100
-                overlap = self.chunk_overlap - 20
+                chunk_size = self.chunk_size - 150
+                overlap = self.chunk_overlap - 40
             elif doc_type == 'narrative':
-                chunk_size = self.chunk_size + 100
-                overlap = self.chunk_overlap + 30
+                chunk_size = self.chunk_size + 200
+                overlap = self.chunk_overlap + 50
             else:
                 chunk_size = self.chunk_size
                 overlap = self.chunk_overlap
@@ -508,43 +508,80 @@ class UniversalEmbeddingPipeline:
         return all_documents, stats
 
     def process_pdf(self) -> tuple[List[Document], Dict[str, Any]]:
-        """Process PDF document."""
+        """Process all uploaded PDFs for this client.
+
+        Supports the new multi-PDF structure (pdfs/ directory with manifest.json).
+        Falls back to legacy single-PDF (custom_pdf.txt) for backward compatibility.
+        """
         print("\n" + "="*60)
         print("📄 Processing PDF Content")
         print("="*60)
 
-        pdf_text_path = os.path.join(self.client_dir, "custom_pdf.txt")
-        if not os.path.exists(pdf_text_path):
-            raise FileNotFoundError(f"PDF text not found: {pdf_text_path}")
+        all_documents: List[Document] = []
+        total_stats: Dict[str, Any] = {"pdfs_processed": 0, "total_chunks": 0}
 
-        with open(pdf_text_path, 'r', encoding='utf-8') as f:
-            text = f.read()
+        # ── New multi-PDF structure ───────────────────────────────────────────
+        manifest_path = os.path.join(self.client_dir, "pdfs", "manifest.json")
+        if os.path.exists(manifest_path):
+            with open(manifest_path) as f:
+                manifest = json.load(f)
 
-        pdf_path = os.path.join(self.client_dir, "custom_pdf.pdf")
-        pdf_filename = os.path.basename(pdf_path) if os.path.exists(pdf_path) else "document.pdf"
+            for entry in manifest:
+                pdf_id = entry["pdf_id"]
+                original_name = entry.get("original_name", "document.pdf")
+                text_path = os.path.join(self.client_dir, "pdfs", f"{pdf_id}.txt")
 
-        print(f"📄 Loaded PDF: {pdf_filename}")
+                if not os.path.exists(text_path):
+                    print(f"  ⚠️ Missing text for PDF {original_name} ({pdf_id}), skipping")
+                    continue
 
-        cleaned_text = self.cleaner.clean_text(text, preserve_structure=True)
+                with open(text_path, 'r', encoding='utf-8') as f:
+                    text = f.read()
 
-        metadata = {
-            'source': 'pdf',
-            'filename': pdf_filename,
-            'title': f"PDF: {pdf_filename}"
-        }
+                print(f"  📄 Processing: {original_name}")
+                cleaned_text = self.cleaner.clean_text(text, preserve_structure=True)
 
-        documents = self.chunker.chunk_document(cleaned_text, metadata)
+                metadata = {
+                    'source': 'pdf',
+                    'pdf_id': pdf_id,
+                    'filename': original_name,
+                    'title': f"PDF: {original_name}"
+                }
 
-        stats = {
-            'filename': pdf_filename,
-            'total_chunks': len(documents),
-            'original_length': len(text),
-            'cleaned_length': len(cleaned_text)
-        }
+                docs = self.chunker.chunk_document(cleaned_text, metadata)
+                all_documents.extend(docs)
+                total_stats["pdfs_processed"] += 1
+                total_stats["total_chunks"] += len(docs)
+                print(f"  ✅ {original_name}: {len(docs)} chunks")
 
-        print(f"  ✅ Generated {len(documents)} semantic chunks")
+        # ── Legacy single-PDF fallback ────────────────────────────────────────
+        elif os.path.exists(os.path.join(self.client_dir, "custom_pdf.txt")):
+            pdf_text_path = os.path.join(self.client_dir, "custom_pdf.txt")
+            with open(pdf_text_path, 'r', encoding='utf-8') as f:
+                text = f.read()
 
-        return documents, stats
+            pdf_filename = "custom_pdf.pdf"
+            print(f"  📄 Legacy PDF: {pdf_filename}")
+            cleaned_text = self.cleaner.clean_text(text, preserve_structure=True)
+
+            metadata = {
+                'source': 'pdf',
+                'pdf_id': 'legacy',
+                'filename': pdf_filename,
+                'title': f"PDF: {pdf_filename}"
+            }
+
+            docs = self.chunker.chunk_document(cleaned_text, metadata)
+            all_documents.extend(docs)
+            total_stats["pdfs_processed"] = 1
+            total_stats["total_chunks"] = len(docs)
+            print(f"  ✅ Legacy PDF: {len(docs)} chunks")
+
+        if not all_documents:
+            raise FileNotFoundError("No PDF text files found to process")
+
+        print(f"\n📚 Total: {total_stats['pdfs_processed']} PDFs → {total_stats['total_chunks']} chunks")
+        return all_documents, total_stats
 
     def process_custom_qa(self) -> tuple[List[Document], Dict[str, Any]]:
         """Process custom Q&A pairs."""

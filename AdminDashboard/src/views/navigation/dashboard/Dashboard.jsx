@@ -30,6 +30,7 @@ const Dashboard = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewType, setViewType] = useState(''); // 'qa' or 'pdf'
   const [viewContent, setViewContent] = useState(null);
+  const [deletingPdfs, setDeletingPdfs] = useState(new Set());
 
   useEffect(() => {
     if (!token) {
@@ -303,15 +304,45 @@ const Dashboard = () => {
     }
   };
 
+  const deletePDF = async (pdfId, pdfName) => {
+    if (!confirm(`Delete "${pdfName}"? This will remove it from the chatbot.`)) return;
+    setDeletingPdfs((prev) => new Set(prev).add(pdfId));
+    try {
+      const res = await fetch(`${API_URL}/client/delete-pdf/me?pdf_id=${encodeURIComponent(pdfId)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      const remaining = (viewContent?.pdfs || []).filter((p) => p.pdf_id !== pdfId);
+      if (remaining.length === 0) {
+        setShowViewModal(false);
+        setViewContent(null);
+      } else {
+        setViewContent({ ...viewContent, pdfs: remaining, total: remaining.length });
+      }
+      if (data.re_embedding?.task_id) {
+        setLog(`PDF "${pdfName}" deleted!\n\nRe-embedding Task: ${data.re_embedding.task_id}`);
+        pollTaskStatus(data.re_embedding.task_id);
+      } else {
+        setLog(`PDF "${pdfName}" deleted successfully.`);
+      }
+      setTimeout(fetchClientTasks, 1000);
+    } catch (e) {
+      console.error('Failed to delete PDF:', e);
+    } finally {
+      setDeletingPdfs((prev) => { const s = new Set(prev); s.delete(pdfId); return s; });
+    }
+  };
+
   const deleteContent = async (contentType) => {
     if (!confirm(`Are you sure you want to delete your ${contentType} content?`)) {
       return;
     }
 
     try {
-      const endpoint = contentType === 'qa' ? '/client/delete-qa/me' : '/client/delete-pdf/me';
+      const endpoint = '/client/delete-qa/me';
       const data = await call(endpoint, { method: 'DELETE' });
-      
+
       setShowViewModal(false);
       setViewContent(null);
       
@@ -565,41 +596,58 @@ const Dashboard = () => {
                   <div>
                     {viewContent.has_pdf ? (
                       <div>
-                        <div className="alert alert-success">PDF file found and processed</div>
-                        <div className="row">
-                          <div className="col-md-6">
-                            <h6>File Information:</h6>
-                            <ul className="list-group list-group-flush">
-                              <li className="list-group-item">
-                                <strong>Filename:</strong> {viewContent.pdf_info.filename}
-                              </li>
-                              <li className="list-group-item">
-                                <strong>Size:</strong> {viewContent.pdf_info.size_mb} MB
-                              </li>
-                              <li className="list-group-item">
-                                <strong>Text Extracted:</strong> {viewContent.has_extracted_text ? 'Yes' : 'No'}
-                              </li>
-                              {viewContent.pdf_info.word_count && (
-                                <li className="list-group-item">
-                                  <strong>Word Count:</strong> {viewContent.pdf_info.word_count}
-                                </li>
-                              )}
-                            </ul>
-                          </div>
-                          <div className="col-md-6">
-                            {viewContent.pdf_info.preview && (
-                              <div>
-                                <h6>Text Preview:</h6>
-                                <div className="border p-3 bg-light" style={{ maxHeight: '300px', overflowY: 'auto', fontSize: '0.9em' }}>
-                                  {viewContent.pdf_info.preview}
+                        <div className="alert alert-success mb-3">
+                          {viewContent.total} PDF{viewContent.total !== 1 ? 's' : ''} uploaded
+                        </div>
+                        {viewContent.pdfs.map((pdf) => (
+                          <div key={pdf.pdf_id} className="card mb-3">
+                            <div className="card-body">
+                              <div className="d-flex justify-content-between align-items-start mb-2">
+                                <h6 className="card-title mb-0">📄 {pdf.original_name}</h6>
+                                <button
+                                  className="btn btn-outline-danger btn-sm"
+                                  disabled={deletingPdfs.has(pdf.pdf_id)}
+                                  onClick={() => deletePDF(pdf.pdf_id, pdf.original_name)}
+                                >
+                                  {deletingPdfs.has(pdf.pdf_id) ? (
+                                    <><span className="spinner-border spinner-border-sm me-1" />Deleting...</>
+                                  ) : '🗑️ Delete'}
+                                </button>
+                              </div>
+                              <div className="row g-2 mb-2">
+                                <div className="col-auto">
+                                  <span className="badge bg-secondary">{pdf.size_mb} MB</span>
+                                </div>
+                                <div className="col-auto">
+                                  <span className="badge bg-info">{pdf.pages} pages</span>
+                                </div>
+                                {pdf.word_count && (
+                                  <div className="col-auto">
+                                    <span className="badge bg-primary">{pdf.word_count.toLocaleString()} words</span>
+                                  </div>
+                                )}
+                                <div className="col-auto">
+                                  <span className={`badge ${pdf.has_extracted_text ? 'bg-success' : 'bg-warning'}`}>
+                                    {pdf.has_extracted_text ? 'Text extracted' : 'Not extracted'}
+                                  </span>
                                 </div>
                               </div>
-                            )}
+                              {pdf.upload_date && (
+                                <small className="text-muted d-block mb-2">
+                                  Uploaded: {new Date(pdf.upload_date).toLocaleString()}
+                                </small>
+                              )}
+                              {pdf.preview && (
+                                <div className="border rounded p-2 bg-light" style={{ maxHeight: '120px', overflowY: 'auto', fontSize: '0.85em' }}>
+                                  {pdf.preview}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
+                        ))}
                       </div>
                     ) : (
-                      <div className="alert alert-warning">No PDF file found</div>
+                      <div className="alert alert-warning">No PDFs uploaded yet</div>
                     )}
                   </div>
                 )}
@@ -608,9 +656,9 @@ const Dashboard = () => {
                 <button className="btn btn-secondary" onClick={() => setShowViewModal(false)}>
                   Close
                 </button>
-                {((viewType === 'qa' && viewContent?.has_qa) || (viewType === 'pdf' && viewContent?.has_pdf)) && (
+                {viewType === 'qa' && viewContent?.has_qa && (
                   <button className="btn btn-danger" onClick={() => deleteContent(viewType)}>
-                    🗑️ Delete {viewType === 'qa' ? 'Q&A' : 'PDF'}
+                    🗑️ Delete Q&A
                   </button>
                 )}
               </div>

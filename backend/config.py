@@ -1,4 +1,5 @@
 import os
+from typing import List
 from urllib.parse import quote_plus
 from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
@@ -13,8 +14,15 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
 
+    # CORS
+    ALLOWED_ORIGINS: str
+
+    @property
+    def allowed_origins_list(self) -> List[str]:
+        return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
+
     # MariaDB/MySQL Configuration
-    # MARIADB_ROOT_PASSWORD: str
+    MARIADB_ROOT_PASSWORD: str
     MARIADB_DATABASE: str
     MARIADB_USER: str
     MARIADB_PASSWORD: str

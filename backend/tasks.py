@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import subprocess
 import asyncio
 from celery import chain
@@ -7,7 +8,7 @@ from celery.utils.log import get_task_logger
 
 from backend.celery_app import celery_app
 from backend.database import async_session_maker
-from backend.models import add_task, update_task
+from backend.models import add_task, update_task, User
 
 # Add Chatbot/LLM path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -156,7 +157,12 @@ def crawl_website_task(self, client_id: str, allowed_domain: str, start_url: str
     # Success
     run_async(db_update_task(task_id, "completed", f"Crawled pages saved to {output_file}"))
     logger.info(f"Playwright crawl completed for client {client_id}. Saved to {output_file}")
-    return {"client_id": client_id, "output_file": output_file, "source_type": "crawl"}
+
+    # Detect all existing sources so we don't wipe PDF data during re-embed
+    has_pdf = os.path.exists(os.path.join(client_dir, "custom_pdf.txt"))
+    source_type = "both" if has_pdf else "crawl"
+
+    return {"client_id": client_id, "output_file": output_file, "source_type": source_type}
 
 
 @celery_app.task(bind=True)
@@ -175,7 +181,7 @@ def run_embeddings_task(self, prev_result):
 
     # Use the enhanced embed_pipeline.py script
     script_path = os.path.abspath(os.path.join(BASE_DIR, "../Chatbot/processing/embed_pipeline.py"))
-    
+
     if not os.path.exists(script_path):
         err = f"Embedding script not found at {script_path}"
         logger.error(err)
@@ -191,7 +197,7 @@ def run_embeddings_task(self, prev_result):
     client_dir = os.path.join(CLIENTS_DIR, client_id)
     logs_dir = os.path.join(client_dir, "logs")
     os.makedirs(logs_dir, exist_ok=True)
-    
+
     with open(os.path.join(logs_dir, f"embeddings_{task_id}.stdout.log"), "w", encoding="utf-8") as f:
         f.write(stdout or "")
     with open(os.path.join(logs_dir, f"embeddings_{task_id}.stderr.log"), "w", encoding="utf-8") as f:
@@ -226,9 +232,19 @@ def pdf_embed_pipeline(self, client_id: str):
     """Pipeline to embed uploaded PDF using enhanced pipeline."""
     logger.info(f"Starting PDF embedding for client {client_id}")
 
-    # For PDFs, no crawling step; just run embeddings with source_type='pdf'
+    # Detect all existing sources so we don't wipe website data
+    client_dir = os.path.join(CLIENTS_DIR, client_id)
+    has_website = os.path.exists(os.path.join(client_dir, "website_content.json"))
+    # Support both new multi-PDF (pdfs/manifest.json) and legacy (custom_pdf.txt)
+    has_pdf = (
+        os.path.exists(os.path.join(client_dir, "pdfs", "manifest.json")) or
+        os.path.exists(os.path.join(client_dir, "custom_pdf.txt"))
+    )
+
+    source_type = "both" if has_website else "pdf"
+
     result = run_embeddings_task.apply_async(
-        args=({"client_id": client_id, "source_type": "pdf"},)
+        args=({"client_id": client_id, "source_type": source_type},)
     )
     return {"chain_task_id": result.id}
 
@@ -237,12 +253,12 @@ def pdf_embed_pipeline(self, client_id: str):
 def qa_embed_pipeline(self, client_id: str):
     """Pipeline to re-embed after Q&A updates."""
     logger.info(f"Starting Q&A re-embedding for client {client_id}")
-    
+
     # Check what sources exist
     client_dir = os.path.join(CLIENTS_DIR, client_id)
     has_website = os.path.exists(os.path.join(client_dir, "website_content.json"))
     has_pdf = os.path.exists(os.path.join(client_dir, "custom_pdf.txt"))
-    
+
     # Determine source type
     if has_website and has_pdf:
         source_type = "both"
@@ -250,8 +266,86 @@ def qa_embed_pipeline(self, client_id: str):
         source_type = "pdf"
     else:
         source_type = "crawl"
-    
+
     result = run_embeddings_task.apply_async(
         args=({"client_id": client_id, "source_type": source_type},)
     )
     return {"chain_task_id": result.id}
+
+
+@celery_app.task(bind=True)
+def weekly_recrawl_all_clients(self):
+    """Periodic task: re-crawl every client whose website was previously crawled.
+
+    Reads `website_content_stats.json` from each client directory to get the
+    original start_url and domain, then triggers crawl_and_embed_pipeline.
+    Safe to run even if some clients have no website data (skipped silently).
+    """
+    logger.info("🕐 Weekly recrawl: scanning all client directories...")
+    triggered = 0
+    skipped = 0
+
+    if not os.path.isdir(CLIENTS_DIR):
+        logger.warning("client_data directory not found — nothing to recrawl")
+        return {"triggered": 0, "skipped": 0}
+
+    for client_id in os.listdir(CLIENTS_DIR):
+        client_dir = os.path.join(CLIENTS_DIR, client_id)
+        stats_path = os.path.join(client_dir, "website_content_stats.json")
+
+        if not os.path.isfile(stats_path):
+            skipped += 1
+            continue
+
+        try:
+            with open(stats_path) as f:
+                stats = json.load(f)
+            start_url = stats.get("start_url")
+            domain = stats.get("domain")
+
+            if not start_url or not domain:
+                logger.warning(f"⚠️  {client_id}: missing start_url/domain in stats, skipping")
+                skipped += 1
+                continue
+
+            crawl_and_embed_pipeline.delay(client_id, domain, start_url)
+            logger.info(f"✅  Queued recrawl for {client_id} ({start_url})")
+            triggered += 1
+
+        except Exception as e:
+            logger.error(f"❌  Failed to queue recrawl for {client_id}: {e}")
+            skipped += 1
+
+    logger.info(f"Weekly recrawl complete: {triggered} queued, {skipped} skipped")
+    return {"triggered": triggered, "skipped": skipped}
+
+
+@celery_app.task(name="backend.tasks.disable_expired_clients", bind=True)
+def disable_expired_clients(self):
+    """Daily task: disable chatbots for clients whose plan has expired."""
+    from datetime import datetime
+    from sqlmodel import select
+
+    async def _run():
+        async with async_session_maker() as session:
+            now = datetime.utcnow()
+            stmt = select(User).where(
+                User.plan_expires_at != None,
+                User.plan_expires_at < now,
+                User.chatbot_enabled == True,
+            )
+            result = await session.execute(stmt)
+            expired = result.scalars().all()
+
+            disabled = 0
+            for user in expired:
+                user.chatbot_enabled = False
+                session.add(user)
+                disabled += 1
+
+            await session.commit()
+            return disabled
+
+    count = run_async(_run())
+    logger.info(f"Auto-disabled {count} expired client(s)")
+    return {"disabled": count}

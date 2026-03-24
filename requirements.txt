@@ -27,3 +27,6 @@ lxml
 langchain
 langchain-core
 langchain-text-splitters
+slowapi
+rank-bm25
+flower

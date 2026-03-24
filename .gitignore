@@ -10,3 +10,4 @@ docker-compose.yml
 .python-version
 pyproject.toml
 uv.lock
+CLAUDE.md

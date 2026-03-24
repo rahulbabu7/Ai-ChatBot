@@ -78,6 +78,7 @@ async def login(req: LoginRequest, session: AsyncSession = Depends(get_session))
         "success": True,
         "token": token,
         "client_id": user.client_id,
+        "role": user.role,
         "message": "Login successful"
     }
 

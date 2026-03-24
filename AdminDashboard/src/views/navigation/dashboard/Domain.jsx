@@ -100,23 +100,24 @@ const Domain = () => {
   };
 
   const integrationCode = `<!-- Add this to your website -->
-  <script>
-    (function() {
-      const domain = encodeURIComponent(window.location.hostname);
-      const iframe = document.createElement("iframe");
-      iframe.src = "https://aichat360.kochi.digital?domain=" + domain;
-      iframe.style.cssText = "position:fixed; bottom:20px; right:20px; width:400px; height:600px; border:none; z-index:999999;";
-      document.body.appendChild(iframe);
-    })();
-  </script>
+    <iframe
+      id="chatbot-widget"
+      src="https://aichat360.kochi.digital/?domain=yourDomain"
+      style="position: fixed; bottom: 20px; right: 20px; border: none; z-index: 999999; transition: width 0.3s ease, height 0.3s ease;">
+    </iframe>
+    
+    <script>
+      window.addEventListener('message', function(event) {
+        if (event.data.type === 'chatbot-resize') {
+          const iframe = document.getElementById('chatbot-widget');
+          if (iframe) {
+            iframe.style.width = event.data.width + 'px';
+            iframe.style.height = event.data.height + 'px';
+          }
+        }
+      });
+    </script>
   `;
-  const simpleIntegrationCode = `<!-- Add this to your website  replace yourDomain with the correct domain -->
-
-
-<iframe
-  src="https://aichat360.kochi.digital/?domain=yourDomain"
-  style="position: fixed; bottom: 20px; right: 20px; width: 400px; height: 600px; border: none; z-index: 999999;">
-</iframe>`;
 
   if (isLoading)
     return (
@@ -172,7 +173,7 @@ const Domain = () => {
       )}
 
       {/* Integration Code Section */}
-      {showIntegrationCode && (
+      {/* {showIntegrationCode && (
         <div className="card p-4 shadow-sm mb-4">
           <h5 className="card-title">Integration Code</h5>
           <div className="d-flex justify-content-between align-items-center mb-2">
@@ -185,7 +186,7 @@ const Domain = () => {
             {simpleIntegrationCode}
           </pre>
         </div>
-      )}
+      )}*/}
 
       {/* Add Domain Section */}
       <div className="card p-4 shadow-sm mb-4">

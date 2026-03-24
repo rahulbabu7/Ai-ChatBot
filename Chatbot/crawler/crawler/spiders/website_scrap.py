@@ -9,6 +9,8 @@ import os
 import re
 import argparse
 import traceback
+import requests
+from xml.etree import ElementTree
 from urllib.parse import urljoin, urlparse
 from playwright.async_api import async_playwright, Page, TimeoutError as PlaywrightTimeoutError
 from bs4 import BeautifulSoup, NavigableString
@@ -43,8 +45,87 @@ class StructuredContentExtractor:
         '.navigation', '.nav', '.menu',
         '.sidebar', '.widget', '.advertisement',
         '.cookie-notice', '.popup', '.modal',
-        '.social-share', '.comments', '.related-posts'
+        '.social-share', '.comments', '.related-posts',
+        # CMS / WordPress post metadata
+        '.entry-meta', '.post-meta', '.byline', '.wp-post-meta',
+        '.post-date', '.post-author', '.post-categories', '.post-tags',
+        '.entry-footer', '.post-footer', '.author-bio', '.author-box',
+        '.comment-count', '.comments-link', '.cats-links', '.tags-links',
+        # WordPress archive elements
+        '.read-more', '.more-link', '.continue-reading',
+        '.breadcrumbs', '.breadcrumb',
     ]
+
+    # Regex patterns for CMS metadata noise in extracted text
+    _CMS_NOISE_PATTERNS = [
+        re.compile(r'By\s+.{1,60}\s*\|', re.IGNORECASE),          # "By Author Name|"
+        re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+\-]\d{2}:\d{2}'),  # ISO timestamps
+        re.compile(r'\d+\s*Comments?\b', re.IGNORECASE),            # "0 Comments"
+        re.compile(r'Categories:\s*.+', re.IGNORECASE),             # "Categories: X"
+        re.compile(r'Tags?:\s*.+', re.IGNORECASE),                  # "Tags: X"
+        re.compile(r'\[\.{3}\]\s*Read More', re.IGNORECASE),        # "[...]Read More"
+        re.compile(r'\bRead More\b', re.IGNORECASE),                # standalone "Read More"
+        re.compile(r'^\d{4},?\s*\d{4}$', re.MULTILINE),            # garbled dates "3006, 2021"
+        re.compile(r'^(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d+,\s+\d{4}\s*\|.*$', re.MULTILINE | re.IGNORECASE),  # "July 4th, 2021|..."
+    ]
+
+    @classmethod
+    def _clean_cms_noise(cls, text: str) -> str:
+        """Remove CMS/WordPress metadata patterns from extracted text."""
+        for pattern in cls._CMS_NOISE_PATTERNS:
+            text = pattern.sub('', text)
+        # Collapse 3+ consecutive blank lines into 2
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        return text.strip()
+
+    @classmethod
+    def _is_person_profile(cls, content: str) -> bool:
+        """Detect staff/person profile pages — contact cards with no knowledge base value.
+        Generic: works for any domain (college faculty, hospital doctors, company employees).
+        """
+        sample = content[:800].lower()
+        # Contact card indicators
+        profile_signals = [
+            bool(re.search(r'mobile\s*(number|no|:)', sample)),
+            bool(re.search(r'date\s+of\s+joining', sample)),
+            bool(re.search(r'(assistant|associate|senior|junior)\s+professor', sample)),
+            bool(re.search(r'designation\s*:', sample)),
+            bool(re.search(r'employee\s*(id|code)\s*:', sample)),
+            bool(re.search(r'staff\s+id\s*:', sample)),
+        ]
+        # A page is a profile if it hits 2+ strong signals
+        # (no length limit — long faculty pages with publications still qualify)
+        return sum(profile_signals) >= 2
+
+    @classmethod
+    def _is_stale_page(cls, soup: 'BeautifulSoup', content: str) -> bool:
+        """Return True if this page has no recent content and was last modified > 2 years ago.
+        Uses Open Graph / schema.org meta tags which most CMSes emit.
+        """
+        from datetime import datetime, timezone, timedelta
+        STALE_THRESHOLD = datetime.now(timezone.utc) - timedelta(days=730)  # 2 years
+
+        # 1. Check meta tags for last-modified date
+        for prop in ('article:modified_time', 'article:published_time', 'og:updated_time'):
+            tag = soup.find('meta', property=prop) or soup.find('meta', attrs={'name': prop})
+            if tag and tag.get('content'):
+                try:
+                    dt = datetime.fromisoformat(tag['content'].replace('Z', '+00:00'))
+                    if dt < STALE_THRESHOLD:
+                        # Also check if content mentions recent years (2023+) — if so keep it
+                        recent = re.search(r'\b202[3-9]\b', content)
+                        return recent is None  # Stale only if no recent year found
+                except Exception:
+                    pass
+
+        # 2. No date meta tags — check if content has ANY recent year mention
+        # Pages with only old years (2018, 2019, 2020) and no recent ones are stale
+        old_years = re.findall(r'\b(201[0-9]|202[0-2])\b', content[:3000])
+        recent_years = re.findall(r'\b(202[3-9])\b', content[:3000])
+        if old_years and not recent_years and len(old_years) >= 3:
+            return True
+
+        return False
 
     @classmethod
     async def extract_content(cls, page: Page, url: str, dynamic_data: Dict = None) -> Optional[Dict[str, any]]:
@@ -52,6 +133,9 @@ class StructuredContentExtractor:
         try:
             html = await page.content()
             soup = BeautifulSoup(html, 'html.parser')
+
+            # Extract Schema.org JSON-LD BEFORE noise removal (script tags get stripped)
+            schema_content = cls._extract_schema_org(soup)
 
             # Remove noise
             for selector in cls.NOISE_SELECTORS:
@@ -87,9 +171,42 @@ class StructuredContentExtractor:
                 text_content, tables, lists, notes, headings, dynamic_data  # PASS dynamic_data
             )
 
+            # Append Schema.org JSON-LD data (extracted before noise removal above)
+            if schema_content:
+                combined_content += schema_content
+
+            # Append <details>/<summary> FAQ accordion content
+            accordion_content = cls._extract_details_accordions(main_content)
+            if accordion_content:
+                combined_content += accordion_content
+
+            # Remove CMS/WordPress metadata noise from final content
+            combined_content = cls._clean_cms_noise(combined_content)
+
+            # Truncate keyword-stuffed titles (keep first sentence or 120 chars)
+            if len(title) > 120:
+                title = title.split('|')[0].split('–')[0].split('-')[0].strip()
+                title = title[:120].strip()
+
             # Quality checks
             if len(combined_content) < 100:
                 print(f"⚠️  Content too short ({len(combined_content)} chars) for {url}")
+                return None
+
+            # Reject archive/listing pages — they're just title lists with no real content
+            read_more_count = combined_content.lower().count('read more')
+            if read_more_count >= 3:
+                print(f"⚠️  Skipping archive/listing page (found {read_more_count} 'Read More' links): {url}")
+                return None
+
+            # Reject person/staff profile pages — contact cards with no useful knowledge base content
+            if cls._is_person_profile(combined_content):
+                print(f"⚠️  Skipping person profile page: {url}")
+                return None
+
+            # Reject stale pages — last modified > 2 years ago with no recent content
+            if cls._is_stale_page(soup, combined_content):
+                print(f"⚠️  Skipping stale page (outdated content): {url}")
                 return None
 
             # Detect content characteristics
@@ -593,6 +710,96 @@ class StructuredContentExtractor:
             'has_tables': 'table' in text_lower or '|' in text,
         }
 
+    @staticmethod
+    def _extract_schema_org(soup: BeautifulSoup) -> str:
+        """Extract structured data from JSON-LD Schema.org blocks."""
+        parts = []
+        for script in soup.find_all('script', type='application/ld+json'):
+            try:
+                raw = script.string or ''
+                data = json.loads(raw)
+                # Handle @graph arrays (some CMSes wrap everything in a graph)
+                items = data if isinstance(data, list) else [data]
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    schema_type = item.get('@type', '')
+
+                    if schema_type == 'FAQPage':
+                        parts.append("\n\n=== FAQ (Schema.org) ===")
+                        for entity in item.get('mainEntity', []):
+                            q = entity.get('name', '').strip()
+                            a = entity.get('acceptedAnswer', {}).get('text', '').strip()
+                            if q and a:
+                                parts.append(f"Q: {q}\nA: {a}")
+
+                    elif schema_type in ('Product', 'Service'):
+                        parts.append(f"\n\n=== {schema_type} Info (Schema.org) ===")
+                        for field in ('name', 'description', 'sku', 'brand'):
+                            val = item.get(field, '')
+                            if val:
+                                parts.append(f"{field.capitalize()}: {val}")
+                        offers = item.get('offers')
+                        if isinstance(offers, dict):
+                            price = offers.get('price', '')
+                            currency = offers.get('priceCurrency', '')
+                            if price:
+                                parts.append(f"Price: {currency} {price}".strip())
+                        elif isinstance(offers, list):
+                            for o in offers:
+                                price = o.get('price', '')
+                                currency = o.get('priceCurrency', '')
+                                if price:
+                                    parts.append(f"Price: {currency} {price}".strip())
+
+                    elif schema_type == 'LocalBusiness' or schema_type.endswith('Business'):
+                        parts.append("\n\n=== Business Info (Schema.org) ===")
+                        for field in ('name', 'telephone', 'email'):
+                            val = item.get(field, '')
+                            if val:
+                                parts.append(f"{field.capitalize()}: {val}")
+                        address = item.get('address')
+                        if isinstance(address, dict):
+                            addr_parts = [
+                                address.get('streetAddress', ''),
+                                address.get('addressLocality', ''),
+                                address.get('addressRegion', ''),
+                                address.get('postalCode', ''),
+                                address.get('addressCountry', ''),
+                            ]
+                            addr_str = ', '.join(p for p in addr_parts if p)
+                            if addr_str:
+                                parts.append(f"Address: {addr_str}")
+                        hours = item.get('openingHours', '')
+                        if hours:
+                            if isinstance(hours, list):
+                                parts.append(f"Opening Hours: {', '.join(hours)}")
+                            else:
+                                parts.append(f"Opening Hours: {hours}")
+            except Exception:
+                continue
+        return '\n'.join(parts)
+
+    @staticmethod
+    def _extract_details_accordions(soup: BeautifulSoup) -> str:
+        """Extract <details>/<summary> FAQ accordion elements."""
+        details_elements = soup.find_all('details')
+        if not details_elements:
+            return ''
+        parts = ["\n\n=== FAQ Accordions ==="]
+        for details in details_elements:
+            summary = details.find('summary')
+            if not summary:
+                continue
+            question = summary.get_text(strip=True)
+            # Clone summary to avoid mutating soup; get remaining text
+            summary_text = summary.extract()  # removes it from details
+            answer = details.get_text(separator=' ', strip=True)
+            # Restore (we decomposed it from a clone, soup is modified — acceptable)
+            if question and answer:
+                parts.append(f"Q: {question}\nA: {answer}")
+        return '\n'.join(parts) if len(parts) > 1 else ''
+
 
 class SmartLinkExtractor:
     """Intelligent link extraction with filtering."""
@@ -689,10 +896,97 @@ class UniversalWebScraper:
         self.content_extractor = StructuredContentExtractor()
         self.link_extractor = SmartLinkExtractor()
 
-    # ADD to UniversalWebScraper class:
+    def _fetch_sitemap_urls(self) -> None:
+        """Pre-populate the crawl queue from sitemap.xml / sitemap_index.xml / robots.txt."""
+        base = f"{urlparse(self.start_url).scheme}://{self.domain}"
+        candidates = [
+            f"{base}/sitemap.xml",
+            f"{base}/sitemap_index.xml",
+            f"{base}/sitemap/",
+        ]
+
+        # Also check robots.txt for Sitemap: directives
+        try:
+            resp = requests.get(f"{base}/robots.txt", timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+            if resp.status_code == 200:
+                for line in resp.text.splitlines():
+                    if line.lower().startswith("sitemap:"):
+                        sitemap_url = line.split(":", 1)[1].strip()
+                        if sitemap_url not in candidates:
+                            candidates.insert(0, sitemap_url)
+        except Exception:
+            pass
+
+        discovered: Set[str] = set()
+        sitemap_ns = "http://www.sitemaps.org/schemas/sitemap/0.9"
+
+        def _parse_sitemap(url: str, depth: int = 0) -> None:
+            if depth > 3:
+                return
+            try:
+                resp = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+                if resp.status_code != 200:
+                    return
+                root = ElementTree.fromstring(resp.content)
+                # Sitemap index — recurse into child sitemaps
+                for loc in root.findall(f".//{{{sitemap_ns}}}sitemap/{{{sitemap_ns}}}loc"):
+                    _parse_sitemap(loc.text.strip(), depth + 1)
+                # Regular sitemap — collect page URLs
+                for loc in root.findall(f".//{{{sitemap_ns}}}url/{{{sitemap_ns}}}loc"):
+                    page_url = loc.text.strip()
+                    if urlparse(page_url).netloc == self.domain:
+                        discovered.add(page_url)
+            except Exception:
+                pass
+
+        for candidate in candidates:
+            _parse_sitemap(candidate)
+            if discovered:
+                break  # Stop after first successful sitemap
+
+        # Patterns that indicate low-value / non-content pages
+        SKIP_PATTERNS = [
+            r'/page/\d+',           # Pagination
+            r'\?',                  # Query strings
+            r'#',                   # Anchors
+            r'/tag/',               # Tag archives
+            r'/category/',          # Category archives
+            r'/author/',            # Author pages
+            r'/feed/',              # RSS feeds
+            r'/wp-json/',           # WordPress API
+            r'/wp-admin/',          # Admin pages
+            r'/login', r'/logout',  # Auth pages
+            r'/cart', r'/checkout', # E-commerce
+            r'\.(jpg|jpeg|png|gif|pdf|zip|doc|docx|xls|xlsx)$',  # Files
+        ]
+        skip_re = re.compile('|'.join(SKIP_PATTERNS), re.IGNORECASE)
+
+        # Sort by URL path depth (fewer segments = more important page)
+        def _url_depth(u: str) -> int:
+            return len([s for s in urlparse(u).path.split('/') if s])
+
+        filtered = sorted(
+            [u for u in discovered if not skip_re.search(u)],
+            key=_url_depth
+        )
+
+        # Take top 50 shallowest URLs — BFS will discover deeper ones via links naturally
+        added = 0
+        for url in filtered[:50]:
+            if url not in self.visited_urls and url not in self.queue:
+                self.queue.append(url)
+                added += 1
+
+        if added:
+            print(f"🗺️  Sitemap: queued {added} priority URLs for {self.domain} (sorted by depth)")
+        else:
+            print(f"ℹ️  No sitemap found for {self.domain}, falling back to BFS link discovery")
 
     async def scrape(self):
         """Main scraping orchestration."""
+        # Discover pages via sitemap before BFS link following
+        self._fetch_sitemap_urls()
+
         print(f"\n🔧 Starting Playwright browser...")
 
         try:

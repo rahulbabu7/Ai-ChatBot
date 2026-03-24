@@ -544,6 +544,98 @@ async def get_session_stats(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error fetching session stats: {str(e)}")
 
+FALLBACK_PHRASES = [
+    "i don't have information",
+    "i don't have that information",
+    "not in my knowledge",
+    "not available in",
+    "no information about",
+    "i couldn't find",
+    "not mentioned in",
+]
+
+
+@router.get("/stats/top-questions")
+async def get_top_questions(
+    client_id: str = Depends(get_client_from_header),
+    session: AsyncSession = Depends(get_session),
+    days: int = Query(30, ge=1, le=365, description="Number of days to look back"),
+    limit: int = Query(20, ge=1, le=100, description="Number of results to return")
+):
+    """Get most frequently asked questions by users"""
+    try:
+        since = datetime.now() - timedelta(days=days)
+        stmt = (
+            select(
+                func.lower(func.trim(Chat.message)).label("question"),
+                func.count().label("count")
+            )
+            .where(
+                Chat.client_id == client_id,
+                Chat.role == "user",
+                Chat.created_at >= since
+            )
+            .group_by(func.lower(func.trim(Chat.message)))
+            .order_by(func.count().desc())
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        rows = result.all()
+        return {
+            "top_questions": [{"question": r.question, "count": r.count} for r in rows],
+            "days": days
+        }
+    except Exception as e:
+        print(f"❌ Error fetching top questions: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching top questions: {str(e)}")
+
+
+@router.get("/stats/unanswered")
+async def get_unanswered_questions(
+    client_id: str = Depends(get_client_from_header),
+    session: AsyncSession = Depends(get_session),
+    days: int = Query(30, ge=1, le=365, description="Number of days to look back"),
+    limit: int = Query(20, ge=1, le=100, description="Number of results to return")
+):
+    """Get questions that resulted in fallback/no-answer responses"""
+    try:
+        since = datetime.now() - timedelta(days=days)
+        stmt = (
+            select(Chat)
+            .where(Chat.client_id == client_id, Chat.created_at >= since)
+            .order_by(Chat.session_id, Chat.created_at)
+        )
+        result = await session.execute(stmt)
+        all_msgs = result.scalars().all()
+
+        # Group messages by session
+        sessions: Dict[str, list] = {}
+        for msg in all_msgs:
+            sessions.setdefault(msg.session_id, []).append(msg)
+
+        # Find user messages followed by a fallback assistant response
+        unanswered: Dict[str, int] = {}
+        for sess_msgs in sessions.values():
+            for i, msg in enumerate(sess_msgs):
+                if msg.role == "user" and i + 1 < len(sess_msgs):
+                    next_msg = sess_msgs[i + 1]
+                    if next_msg.role == "assistant":
+                        msg_lower = next_msg.message.lower()
+                        if any(phrase in msg_lower for phrase in FALLBACK_PHRASES):
+                            q = msg.message.strip()
+                            unanswered[q] = unanswered.get(q, 0) + 1
+
+        sorted_unanswered = sorted(unanswered.items(), key=lambda x: x[1], reverse=True)[:limit]
+        return {
+            "unanswered_questions": [{"question": q, "count": c} for q, c in sorted_unanswered],
+            "total_unanswered": len(unanswered),
+            "days": days
+        }
+    except Exception as e:
+        print(f"❌ Error fetching unanswered questions: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching unanswered questions: {str(e)}")
+
+
 # Background cleanup task
 def cleanup_stale_users():
     """Background thread to clean up stale users"""

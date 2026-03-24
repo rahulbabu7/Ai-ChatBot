@@ -12,9 +12,15 @@ const navigation = {
   type: 'group',
   icon: icons.dashboard,
   children: [
-    { id: 'dashboard', title: 'Dashboard', type: 'item', icon: icons.dashboard, url: '/' },
-    { id: 'dashboard-client', title: 'Dashboard Client', type: 'item', icon: icons.layouts, url: '/dashboard' },
-    { id: 'domain', title: 'Domain', type: 'item', icon: icons.layouts, url: '/domain' }
+    // client items
+    { id: 'dashboard', title: 'Dashboard', type: 'item', icon: icons.dashboard, url: '/', roles: ['client'] },
+    { id: 'onboarding', title: 'Get Started', type: 'item', icon: <i className="ph ph-rocket-launch" />, url: '/onboarding', roles: ['client'] },
+    { id: 'analytics', title: 'Analytics', type: 'item', icon: <i className="ph ph-chart-bar" />, url: '/analytics', roles: ['client'] },
+    { id: 'dashboard-client', title: 'Setup', type: 'item', icon: icons.layouts, url: '/dashboard', roles: ['client'] },
+    { id: 'domain', title: 'Domain', type: 'item', icon: icons.layouts, url: '/domain', roles: ['client'] },
+    { id: 'leads', title: 'Leads', type: 'item', icon: icons.layouts, url: '/leads', roles: ['client'] },
+    { id: 'duration', title: 'Chat Duration', type: 'item', icon: <i className="ph ph-timer" />, url: '/duration', roles: ['client'] },
+    { id: 'first-response-time', title: 'First Response Time', type: 'item', icon: <i className="ph ph-clock" />, url: '/first-response-time', roles: ['client'] },
   ]
 };
 

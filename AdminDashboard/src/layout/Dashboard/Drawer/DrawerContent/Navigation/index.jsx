@@ -11,21 +11,40 @@ import menuItems from 'menu-items';
 
 // ==============================|| NAVIGATION ||============================== //
 
+function filterByRole(items, role) {
+  return items
+    .filter((item) => !item.roles || item.roles.includes(role))
+    .map((item) => ({
+      ...item,
+      ...(item.children ? { children: filterByRole(item.children, role) } : {})
+    }));
+}
+
 export default function Navigation({ selectedItems, setSelectedItems, setSelectTab }) {
   const [selectedID, setSelectedID] = useState('');
   const [selectedLevel, setSelectedLevel] = useState(0);
 
+  const userRole = localStorage.getItem('user_role') || 'client';
+
+  const filteredItems = {
+    ...menuItems,
+    items: menuItems.items.map((group) => ({
+      ...group,
+      children: group.children ? filterByRole(group.children, userRole) : group.children
+    }))
+  };
+
   const lastItem = null;
-  let lastItemIndex = menuItems.items.length - 1;
+  let lastItemIndex = filteredItems.items.length - 1;
   let remItems = [];
   let lastItemId;
 
-  if (lastItem && lastItem < menuItems.items.length) {
-    lastItemId = menuItems.items[lastItem - 1].id;
+  if (lastItem && lastItem < filteredItems.items.length) {
+    lastItemId = filteredItems.items[lastItem - 1].id;
     lastItemIndex = lastItem - 1;
-    remItems = menuItems.items.slice(lastItem - 1, menuItems.items.length).map((item) => ({
-      id: item.id, // Ensure id is included
-      type: item.type, // Add the missing type field
+    remItems = filteredItems.items.slice(lastItem - 1, filteredItems.items.length).map((item) => ({
+      id: item.id,
+      type: item.type,
       title: item.title,
       elements: item.children,
       icon: item.icon,
@@ -35,7 +54,7 @@ export default function Navigation({ selectedItems, setSelectedItems, setSelectT
     }));
   }
 
-  const navGroups = menuItems.items.slice(0, lastItemIndex + 1).map((item, index) => {
+  const navGroups = filteredItems.items.slice(0, lastItemIndex + 1).map((item, index) => {
     switch (item.type) {
       case 'group':
         if (item.url && item.id !== lastItemId) {
@@ -63,6 +82,7 @@ export default function Navigation({ selectedItems, setSelectedItems, setSelectT
             item={item}
             setSelectTab={setSelectTab ?? (() => {})}
           />
+
         );
       default:
         return (

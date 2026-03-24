@@ -417,6 +417,31 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
       }
 
       const data = await res.json();
+      
+      // 🔥 NEW: Handle form collection
+      if (data.form_active) {
+        console.log("📋 Form collection in progress");
+        // You can show a form indicator in the UI
+      }
+      
+      if (data.form_status === 'completed' && data.collected_data) {
+        console.log("✅ Form completed! Data:", data.collected_data);
+        
+        // 🔥 IMPORTANT: Send the collected data to your backend
+        await fetch(`${API_URL}/client/save-lead`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Chatbot-Key": chatbotKey,
+          },
+          body: JSON.stringify({
+            session_id: currentSessionId,
+            client_id: clientId,
+            lead_data: data.collected_data,
+            form_type: data.form_type || 'contact'
+          }),
+        });
+      }
       // console.log("📤 Received response from backend:", data);
 
       if (data.session_id && data.session_id !== currentSessionId) {
@@ -450,6 +475,7 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
           id: data.message_id, // Use the REAL database ID, not a temporary one
           sender: "bot",
           text: data.reply,
+          sources: data.sources || [],
           timestamp: new Date().toLocaleTimeString('en-IN', {
             hour: "2-digit",
             minute: "2-digit",
@@ -801,6 +827,60 @@ const ChatbotWindow = ({ onClose, clientId, chatbotKey, sessionId }) => {
         msg.text
       )}
       </div>
+
+      {/* Source links rendered below the message bubble */}
+      {msg.sender === "bot" && msg.sources && msg.sources.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "6px" }}>
+          {msg.sources
+            .filter(s => (s.type === "webpage" && s.url) || s.type === "document")
+            .slice(0, 2)
+            .map((s, i) => (
+              s.type === "webpage" ? (
+                <a
+                  key={i}
+                  href={s.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontSize: "11px",
+                    color: "#6366f1",
+                    textDecoration: "none",
+                    border: "1px solid #e0e7ff",
+                    borderRadius: "12px",
+                    padding: "3px 10px",
+                    backgroundColor: "#f5f3ff",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  🔗 {s.title || "View Page"}
+                </a>
+              ) : (
+                <a
+                  key={i}
+                  href={`${s.download_path}?chatbot_key=${chatbotKey}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontSize: "11px",
+                    color: "#059669",
+                    textDecoration: "none",
+                    border: "1px solid #d1fae5",
+                    borderRadius: "12px",
+                    padding: "3px 10px",
+                    backgroundColor: "#ecfdf5",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  📄 {s.title || "Download PDF"}
+                </a>
+              )
+            ))}
+        </div>
+      )}
       <span
       style={{
         fontSize: "10px",

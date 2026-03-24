@@ -15,10 +15,13 @@ const MissedChats = Loadable(lazy(() => import('views/reporting/MissedChats')));
 const ChatVolume = Loadable(lazy(() => import('views/reporting/ChatVolume')));
 const FirstResponseTime = Loadable(lazy(() => import('views/reporting/FirstResponseTime')));
 const UserSatisfaction = Loadable(lazy(() => import('views/reporting/UserSatisfaction')));
-
+const LeadsManagement = Loadable(lazy(() => import('views/navigation/dashboard/LeadsManagement')));
 // Settings Pages - Add these imports
 const ShortcutsPage = Loadable(lazy(() => import('views/settings/Shortcuts')));
 const ProfileSettingsPage = Loadable(lazy(() => import('views/settings/ProfileSettings')));
+const AnalyticsPage = Loadable(lazy(() => import('views/navigation/dashboard/Analytics')));
+const OnboardingPage = Loadable(lazy(() => import('views/navigation/dashboard/Onboarding')));
+const SuperAdminPage = Loadable(lazy(() => import('views/navigation/dashboard/SuperAdminDashboard')));
 
 const PagesRoutes = {
   path: '/',
@@ -45,10 +48,15 @@ const PagesRoutes = {
         { path: 'chat-volume', element: <ChatVolume /> },
         { path: 'first-response-time', element: <FirstResponseTime /> },
         { path: 'user-satisfaction', element: <UserSatisfaction /> },
-        
-        // Settings Routes - Add these
+        { path: 'leads', element: <LeadsManagement /> },
+
+        // Settings Routes
         { path: 'settings/shortcuts', element: <ShortcutsPage /> },
         { path: 'settings/profile', element: <ProfileSettingsPage /> },
+        // Analytics & Onboarding
+        { path: 'analytics', element: <AnalyticsPage /> },
+        { path: 'onboarding', element: <OnboardingPage /> },
+        { path: 'superadmin', element: <SuperAdminPage /> },
       ]
     }
   ]
