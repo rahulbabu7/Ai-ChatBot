@@ -22,7 +22,7 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
 
     # MariaDB/MySQL Configuration
-    MARIADB_ROOT_PASSWORD: str
+    # MARIADB_ROOT_PASSWORD: str
     MARIADB_DATABASE: str
     MARIADB_USER: str
     MARIADB_PASSWORD: str
