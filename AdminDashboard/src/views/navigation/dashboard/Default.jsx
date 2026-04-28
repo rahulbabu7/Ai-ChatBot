@@ -247,15 +247,15 @@ export default function DefaultPage() {
         <Col md={3} className="mb-3">
           <Card className="text-center shadow-sm border-0 h-100 bg-info text-white">
             <Card.Body className="d-flex flex-column justify-content-center">
-              <h6 className="mb-1">Total Sessions</h6>
-              <h2 className="fw-bold mb-0">{totalSessions}</h2>
-              <small className="opacity-75">All time</small>
+              <h6 className="mb-1 text-white">Total Sessions</h6>            
+              <h2 className="fw-bold mb-0 text-white">{totalSessions}</h2>
+              <small className="opacity-100">All time</small>
             </Card.Body>
           </Card>
         </Col>
 
         <Col md={3} className="mb-3">
-          <Card className="text-center shadow-sm border-0 h-100 bg-danger text-white position-relative">
+          <Card className="text-center shadow-sm border-0 h-100 bg-danger text-light position-relative">
             <Card.Body className="d-flex flex-column justify-content-center">
               <div className="position-absolute top-0 end-0 m-2">
                 <span className="badge bg-light text-danger">
@@ -263,29 +263,29 @@ export default function DefaultPage() {
                   LIVE
                 </span>
               </div>
-              <h6 className="mb-1">Active Users Now</h6>
-              <h2 className="fw-bold mb-0">{activeUsersNow}</h2>
-              <small className="opacity-75">Chatbot open</small>
+              <h6 className="mb-1 text-white">Active Users Now</h6>
+              <h2 className="fw-bold mb-0 text-white">{activeUsersNow}</h2>
+              <small className="opacity-100">Chatbot open</small>
             </Card.Body>
           </Card>
         </Col>
 
         <Col md={3} className="mb-3">
-          <Card className="text-center shadow-sm border-0 h-100 bg-success text-white">
+          <Card className="text-center shadow-sm border-0 h-100 bg-success text-light">
             <Card.Body className="d-flex flex-column justify-content-center">
-              <h6 className="mb-1">Today's Sessions</h6>
-              <h2 className="fw-bold mb-0">{todaySessions}</h2>
-              <small className="opacity-75">Unique conversations</small>
+              <h6 className="mb-1 text-white">Today's Sessions</h6>
+              <h2 className="fw-bold mb-0 text-white">{todaySessions}</h2>
+              <small className="opacity-100">Unique conversations</small>
             </Card.Body>
           </Card>
         </Col>
 
         <Col md={3} className="mb-3">
-          <Card className="text-center shadow-sm border-0 h-100 bg-warning text-dark">
+          <Card className="text-center shadow-sm border-0 h-100 bg-warning text-light">
             <Card.Body className="d-flex flex-column justify-content-center">
-              <h6 className="mb-1">Today's Visitors</h6>
-              <h2 className="fw-bold mb-0">{todayVisitors}</h2>
-              <small className="opacity-75">Unique users</small>
+              <h6 className="mb-1 text-white">Today's Visitors</h6>
+              <h2 className="fw-bold mb-0 text-white">{todayVisitors}</h2>
+              <small className="opacity-100">Unique users</small>
             </Card.Body>
           </Card>
         </Col>
@@ -448,9 +448,8 @@ export default function DefaultPage() {
             </Card.Header>
             <Card.Body
               ref={chatContainerRef}
-              className="chat-messages p-3"
+              className="chat-messages p-3 chat-messages-container"
               style={{ maxHeight: '70vh', overflowY: 'auto' }}
-            className="chat-messages-container"
             >
               {loading ? (
                 <div className="d-flex justify-content-center align-items-center h-100">
