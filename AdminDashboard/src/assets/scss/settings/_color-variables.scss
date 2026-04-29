@@ -19,14 +19,25 @@ $gray-800: #1d2630;
 $gray-900: #131920;
 $black: #000000;
 
+// Base colors (original dual-tone colors)
+$blue: #2d86c7;
+$purple: #8b6cb8;
+$pink: #c5447a;
+$red: #d4453a;
+$orange: #e06d1a;
+$yellow: #997403;
+$green: #1bb89b;  // Fixed: removed opacity (use rgba() for transparency instead)
+$cyan: #065670;
+
+// Dual-tone color variants (original)
 $blue-dual: #2d86c7;
 $purple-dual: #8b6cb8;
 $pink-dual: #c5447a;
 $red-dual: #d4453a;
 $orange-dual: #e06d1a;
-$yellow-dual: #d4a81f;
+$yellow-dual: #997403;
 $green-dual: #1bb89a;
-$cyan-dual: #2d9abf;
+$cyan-dual: #065670;
 
 // fusv-disablex
 $blue-100: tint-color($blue, 80%);
