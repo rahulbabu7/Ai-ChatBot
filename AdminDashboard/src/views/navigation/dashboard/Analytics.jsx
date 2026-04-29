@@ -7,7 +7,6 @@ import Row from 'react-bootstrap/Row';
 import Card from 'react-bootstrap/Card';
 import Spinner from 'react-bootstrap/Spinner';
 import Badge from 'react-bootstrap/Badge';
-
 export default function Analytics() {
   const { token } = useAuth();
   const [days, setDays] = useState(30);
@@ -25,7 +24,7 @@ export default function Analytics() {
       try {
         const [topRes, unansweredRes] = await Promise.all([
           axios.get(`${API_URL}/client/stats/top-questions?days=${days}&limit=15`, authHeaders),
-          axios.get(`${API_URL}/client/stats/unanswered?days=${days}&limit=15`, authHeaders),
+          axios.get(`${API_URL}/client/stats/unanswered?days=${days}&limit=15`, authHeaders)
         ]);
         setTopQuestions(topRes.data.top_questions || []);
         setUnanswered(unansweredRes.data.unanswered_questions || []);
@@ -48,11 +47,7 @@ export default function Analytics() {
         <div className="d-flex align-items-center gap-2">
           <span className="text-muted small">Time range:</span>
           {[7, 30, 90].map((d) => (
-            <button
-              key={d}
-              className={`btn btn-sm ${days === d ? 'btn-primary' : 'btn-outline-secondary'}`}
-              onClick={() => setDays(d)}
-            >
+            <button key={d} className={`btn btn-sm ${days === d ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => setDays(d)}>
               {d}d
             </button>
           ))}
@@ -72,7 +67,9 @@ export default function Analytics() {
               <Card.Header className="border-bottom">
                 <h5 className="mb-0">
                   Top Questions Asked
-                  <Badge bg="secondary" className="ms-2">{topQuestions.length}</Badge>
+                  <Badge bg="secondary" className="ms-2">
+                    {topQuestions.length}
+                  </Badge>
                 </h5>
                 <small className="text-muted">Most frequent user messages in last {days} days</small>
               </Card.Header>
@@ -91,13 +88,12 @@ export default function Analytics() {
                             <span className="text-muted me-2">#{i + 1}</span>
                             {q.question}
                           </span>
-                          <Badge bg="primary" pill>{q.count}x</Badge>
+                          <Badge bg="primary" pill>
+                            {q.count}x
+                          </Badge>
                         </div>
                         <div className="progress" style={{ height: '4px' }}>
-                          <div
-                            className="progress-bar bg-primary"
-                            style={{ width: `${(q.count / maxCount) * 100}%` }}
-                          />
+                          <div className="progress-bar bg-primary" style={{ width: `${(q.count / maxCount) * 100}%` }} />
                         </div>
                       </li>
                     ))}
@@ -114,7 +110,9 @@ export default function Analytics() {
                 <h5 className="mb-0">
                   Unanswered Questions
                   {totalUnanswered > 0 && (
-                    <Badge bg="danger" className="ms-2">{totalUnanswered}</Badge>
+                    <Badge bg="danger" className="ms-2">
+                      {totalUnanswered}
+                    </Badge>
                   )}
                 </h5>
                 <small className="text-muted">Questions bot couldn't answer — add to knowledge base</small>
@@ -135,15 +133,15 @@ export default function Analytics() {
                         <span className="small text-dark" style={{ maxWidth: '80%' }}>
                           {q.question}
                         </span>
-                        <Badge bg="danger" pill>{q.count}x</Badge>
+                        <Badge bg="danger" pill>
+                          {q.count}x
+                        </Badge>
                       </li>
                     ))}
                   </ul>
                 )}
                 {totalUnanswered > 15 && (
-                  <p className="text-muted small mt-2 text-center">
-                    Showing top 15 of {totalUnanswered} unanswered questions
-                  </p>
+                  <p className="text-muted small mt-2 text-center">Showing top 15 of {totalUnanswered} unanswered questions</p>
                 )}
               </Card.Body>
             </Card>
@@ -165,9 +163,7 @@ export default function Analytics() {
                 <Card className="text-center shadow-sm border-0 bg-success bg-opacity-10">
                   <Card.Body>
                     <h6 className="text-muted mb-1">Total Asks</h6>
-                    <h3 className="fw-bold mb-0 text-success">
-                      {topQuestions.reduce((s, q) => s + q.count, 0)}
-                    </h3>
+                    <h3 className="fw-bold mb-0 text-success">{topQuestions.reduce((s, q) => s + q.count, 0)}</h3>
                     <small className="text-muted">user messages</small>
                   </Card.Body>
                 </Card>
